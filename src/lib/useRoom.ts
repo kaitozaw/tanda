@@ -40,11 +40,11 @@ export function useRoom(roomId: string) {
     }
   }, [storageKey]);
 
-  const refresh = useCallback(async () => {
+  const load = useCallback(async () => {
     const q = memberId ? `?member=${memberId}` : "";
-    const res = await fetch(`/api/rooms/${roomId}${q}`, { cache: "no-store" });
-    if (!res.ok) {
-      setError(res.status === 404 ? "Room not found" : "Could not load the room");
+    const res = await fetch(`/api/rooms/${roomId}${q}`, { cache: "no-store" }).catch(() => null);
+    if (!res?.ok) {
+      setError(res?.status === 404 ? "Room not found" : "Could not load the room");
       return;
     }
     const data = (await res.json()) as RoomView;
@@ -57,12 +57,33 @@ export function useRoom(roomId: string) {
     }
   }, [roomId, memberId, storageKey]);
 
+  // One fetch at a time. Requests that arrive meanwhile become a single follow-up fetch, so a
+  // burst of pushes costs at most two GETs and an older response never overwrites a newer one.
+  const inFlight = useRef(false);
+  const again = useRef(false);
+  const refresh = useCallback(async () => {
+    if (inFlight.current) {
+      again.current = true;
+      return;
+    }
+    inFlight.current = true;
+    try {
+      do {
+        again.current = false;
+        await load();
+      } while (again.current);
+    } finally {
+      inFlight.current = false;
+    }
+  }, [load]);
+
   useEffect(() => {
     void refresh();
     const socket = io();
     socketRef.current = socket;
     socket.on("connect", () => socket.emit("join", { roomId, memberId }));
-    socket.on("refresh", () => void refresh());
+    // Spread the room's refetches over half a second instead of all hitting the server at once.
+    socket.on("refresh", () => void setTimeout(() => void refresh(), Math.random() * 500));
     socket.on("feedback", () => {
       void refresh();
       pushToast("Your feedback is ready", "Open My Posts to see it.");

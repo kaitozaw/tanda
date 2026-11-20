@@ -12,6 +12,8 @@ export interface RoundSummary {
   sessions: number;
   ok: number;
   failed: number;
+  rateLimited: number;
+  timedOut: number;
   events: number;
   newPosts: number;
   finalized: number;
@@ -126,6 +128,8 @@ export class RoundEngine {
       sessions: sessions.length,
       ok: stats.ok,
       failed: stats.failed,
+      rateLimited: stats.rateLimited,
+      timedOut: stats.timedOut,
       events: store.events.length - eventsBefore,
       newPosts: newPosts.length,
       finalized: finalized.length,

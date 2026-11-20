@@ -1,7 +1,7 @@
 # Capture the Narrative
 
 Test a social media post on 1,000 AI agents and see one simulated hour of engagement in one minute.
-Specs: [plan/PRODUCT.md](plan/PRODUCT.md), [plan/DESIGN.md](plan/DESIGN.md), [plan/DEMONSTRATION.md](plan/DEMONSTRATION.md).
+Specs: [plan/PRODUCT.md](plan/PRODUCT.md), [plan/DESIGN.md](plan/DESIGN.md), [plan/DEMONSTRATION.md](plan/DEMONSTRATION.md). Before the demo: [plan/PERFORMANCE.md](plan/PERFORMANCE.md).
 
 ## Run locally
 ```bash
@@ -9,7 +9,7 @@ npm install
 cp .env.example .env          # FAKE_LLM=1 needs no API key
 docker compose up -d          # optional: Postgres (or unset DATABASE_URL for memory only)
 npm run dev                   # http://localhost:3000
-npm run simulate -- --users 100 --seconds 60   # rehearse the demo with fake members
+npm run simulate -- --users 150 --seconds 5    # load test: fake members with open sockets post in a burst
 npm test
 ```
 Admin page: `/admin` (token = `ADMIN_TOKEN`): pause, resume, run a round now, reset the room.

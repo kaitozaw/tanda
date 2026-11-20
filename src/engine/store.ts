@@ -42,6 +42,16 @@ export class Store {
   events: SimEvent[] = [];
   eventsByPost = new Map<string, SimEvent[]>();
   eventSeq = 0;
+  /** Last post time per member, for the post cooldown. Memory only: a restart just resets it. */
+  lastPostAt = new Map<string, number>();
+
+  /** Milliseconds until this member may post again (0 = now). Records the post when allowed. */
+  takePostSlot(memberId: string, now = Date.now()): number {
+    const wait = (this.lastPostAt.get(memberId) ?? -Infinity) + rules.postCooldownMs - now;
+    if (wait > 0) return wait;
+    this.lastPostAt.set(memberId, now);
+    return 0;
+  }
 
   author(post: Post): { handle: string; name: string } {
     if (post.authorType === "member") {
@@ -104,6 +114,7 @@ export class Store {
       this.eventsByPost.set(e.postId, list);
     }
     this.eventSeq = s.events.at(-1)?.id ?? 0;
+    this.lastPostAt = new Map();
   }
 }
 
