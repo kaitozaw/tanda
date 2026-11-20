@@ -30,7 +30,7 @@ describe("applyResults", () => {
     const post = makePost("p1", "m1", "for");
     const other = makePost("p2", "m1", "for");
     const store = storeWith([a], [post, other]);
-    const feeds = new Map<string, FeedItem[]>([["a1", [{ post, viaId: null, slot: "exploration" }]]]);
+    const feeds = new Map<string, FeedItem[]>([["a1", [{ post, viaId: null }]]]);
     const r = result("a1", {
       likes: ["p1", "p1", "p2"], // duplicate and not-in-feed are ignored
       reposts: ["p1"],
@@ -52,7 +52,7 @@ describe("applyResults", () => {
     const a = makeAgent("a1", 50);
     const posts = ["p1", "p2", "p3", "p4"].map((id) => makePost(id, "m1"));
     const store = storeWith([a], posts);
-    const feeds = new Map([["a1", posts.map((post) => ({ post, viaId: null, slot: "follow" as const }))]]);
+    const feeds = new Map([["a1", posts.map((post) => ({ post, viaId: null }))]]);
     const r = result("a1", {
       replies: posts.map((p) => ({ postId: p.id, text: "hi" })),
       unfollows: ["p1"],
@@ -94,7 +94,7 @@ describe("repeat exposure", () => {
     const a = makeAgent("a1", 50);
     const post = makePost("p1", "m1");
     const store = storeWith([a], [post]);
-    const feeds = new Map([["a1", [{ post, viaId: null, slot: "follow" as const }]]]);
+    const feeds = new Map([["a1", [{ post, viaId: null }]]]);
     const r = result("a1", { likes: ["p1"], replies: [{ postId: "p1", text: "again" }] });
     applyResults(store, 1, feeds, [r], new Set());
     applyResults(store, 2, feeds, [r], new Set());

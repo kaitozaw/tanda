@@ -1,11 +1,7 @@
-import type { Server } from "socket.io";
 import type { Notification } from "./applyEvents";
+import { sim } from "./store";
 
-type Globals = { __simIo?: Server };
-const g = globalThis as Globals;
-
-export const setIo = (io: Server) => (g.__simIo = io);
-const io = () => g.__simIo;
+const io = () => sim.io;
 
 export const roomChannel = (roomId: string) => `room:${roomId}`;
 export const memberChannel = (memberId: string) => `member:${memberId}`;

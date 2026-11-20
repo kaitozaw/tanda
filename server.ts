@@ -2,7 +2,8 @@ import "dotenv/config";
 import { createServer } from "node:http";
 import next from "next";
 import { Server } from "socket.io";
-import { setIo, memberChannel, roomChannel } from "./src/engine/broadcaster";
+import { memberChannel, roomChannel } from "./src/engine/broadcaster";
+import { sim } from "./src/engine/store";
 import { boot } from "./src/engine/runtime";
 
 const dev = process.env.NODE_ENV !== "production";
@@ -16,7 +17,7 @@ async function main() {
 
   const http = createServer((req, res) => handle(req, res));
   const io = new Server(http, { cors: { origin: false } });
-  setIo(io);
+  sim.io = io;
   io.on("connection", (socket) => {
     socket.on("join", ({ roomId, memberId }: { roomId?: string; memberId?: string }) => {
       if (typeof roomId === "string") socket.join(roomChannel(roomId));

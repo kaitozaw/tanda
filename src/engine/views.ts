@@ -1,7 +1,6 @@
 import type { Post, SimEvent } from "./types";
-import type { Store } from "./store";
+import { sim, type Store } from "./store";
 import { config, rules } from "./config";
-import { getEngine } from "./roundEngine";
 
 export function postView(store: Store, p: Post) {
   const a = store.author(p);
@@ -42,8 +41,7 @@ const memberPosts = (store: Store) =>
   store.postOrder.map((id) => store.posts.get(id)!).filter((p) => p.authorType === "member");
 
 export function roomView(store: Store, memberId: string | null) {
-  const engine = getEngine();
-  const idle = engine?.idleReason() ?? "starting";
+  const idle = sim.engine?.idleReason() ?? "starting";
   const timeline = store.postOrder.slice(-80).reverse().map((id) => postView(store, store.posts.get(id)!));
   const ranked = memberPosts(store).sort((a, b) => b.points - a.points);
   const leaderboard = ranked.slice(0, 10).map((p) => ({ ...postView(store, p), nickname: store.author(p).name }));
@@ -109,13 +107,17 @@ export function spreadView(store: Store, postId: string) {
   const nodes = new Map<string, { id: string; label: string; kind: string }>();
   const links: { source: string; target: string; kind: string }[] = [];
   nodes.set(post.authorId, { id: post.authorId, label: `@${author.handle}`, kind: "author" });
+  const strength = ["like", "follow", "reply", "repost", "neutralShift", "unfollow", "backlash", "persuasion"];
   for (const e of store.eventsByPost.get(postId) ?? []) {
+    const node = nodes.get(e.agentId);
+    if (node) {
+      if (strength.indexOf(e.type) > strength.indexOf(node.kind)) node.kind = e.type;
+      continue;
+    }
     const a = store.agents.get(e.agentId);
-    const existing = nodes.get(e.agentId);
-    const rankOrder = ["like", "reply", "repost", "persuasion", "backlash"];
-    const kind = existing && rankOrder.indexOf(existing.kind) > rankOrder.indexOf(e.type) ? existing.kind : e.type;
-    nodes.set(e.agentId, { id: e.agentId, label: `@${a?.handle} (${a?.persona.role})`, kind });
-    if (!existing) links.push({ source: e.viaId && nodes.has(e.viaId) ? e.viaId : post.authorId, target: e.agentId, kind: e.viaId ? "via-repost" : "direct" });
+    nodes.set(e.agentId, { id: e.agentId, label: `@${a?.handle} (${a?.persona.role})`, kind: e.type });
+    const via = e.viaId && nodes.has(e.viaId) ? e.viaId : null;
+    links.push({ source: via ?? post.authorId, target: e.agentId, kind: via ? "via-repost" : "direct" });
   }
   return { nodes: [...nodes.values()], links };
 }

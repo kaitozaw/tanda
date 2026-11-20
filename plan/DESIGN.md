@@ -30,7 +30,7 @@ How we build what [PRODUCT.md](PRODUCT.md) describes. Rules (feed slots, scoring
    load on restart                          1,000 parallel / round
 ```
 
-- The round engine works on in-memory state for speed. Each round's changes are saved to Postgres in one transaction, and state is loaded from Postgres on restart.
+- The round engine works on in-memory state for speed. The whole room is saved to Postgres as one snapshot after each round (and a few seconds after joins and posts), and loaded on restart.
 - Run a single instance with no autoscaling, on a paid plan so it does not sleep.
 - The round engine runs on the server, not in serverless functions, because it calls the API 1,000 times every 15s.
 
@@ -39,11 +39,11 @@ How we build what [PRODUCT.md](PRODUCT.md) describes. Rules (feed slots, scoring
 - Tailwind for UI; `react-force-graph-2d` for the network spread view.
 - `@anthropic-ai/sdk`. Agents: `claude-haiku-5-5`, thinking off. Feedback: `claude-sonnet-5-5`.
 - `p-limit` to cap concurrent API calls.
-- Render Postgres with Drizzle ORM.
+- Render Postgres via plain `pg`: one `snapshots` table, one `jsonb` row per room.
 - Render web service. `ANTHROPIC_API_KEY` as an env var (never committed).
 
 ## Data (Postgres, cached in memory)
-One table per type below, each row stored as `jsonb` (shapes live in `src/engine/types.ts`).
+Saved together as one `jsonb` snapshot per room (shapes live in `src/engine/types.ts`).
 ```ts
 Room    { id, topic, round, paused, running, lastRoundMs, requestDay, requestCount }
 Member  { id, nickname, followerIds: AgentId[], lastPostAt }

@@ -1,13 +1,12 @@
 import type { Agent, FeedItem, Post } from "./types";
 import { rules } from "./config";
-import { rank } from "./rank";
 
-export interface FeedContext {
-  /** Posts that are not final yet, in creation order. */
-  pool: Post[];
-  /** postId -> agentIds who reposted it (still active posts only). */
-  repostsByPost: Map<string, string[]>;
-  rand: () => number;
+/** Internal ranking for recommended slots (not the points score). */
+export function rank(post: Post): number {
+  const w = rules.rankWeights;
+  const engagement = w.like * post.counts.like + w.repost * post.counts.repost + w.reply * post.counts.reply;
+  const simAgeHours = (post.roundsSeen * rules.simMinutesPerRound) / 60;
+  return (1 + engagement) / Math.pow(simAgeHours + 2, 1.5);
 }
 
 /** Shared per-round data so building 1,000 feeds stays cheap. */
@@ -32,11 +31,11 @@ export function buildFeed(agent: Agent, ctx: Prepared): FeedItem[] {
     const p = ctx.pool[i];
     if (isOwn(p)) continue;
     if (following.has(p.authorId)) {
-      followCandidates.push({ post: p, viaId: null, slot: "follow" });
+      followCandidates.push({ post: p, viaId: null });
       continue;
     }
     const via = ctx.repostsByPost.get(p.id)?.find((id) => following.has(id) && id !== agent.id);
-    if (via) followCandidates.push({ post: p, viaId: via, slot: "follow" });
+    if (via) followCandidates.push({ post: p, viaId: via });
   }
   // Mix rank and recency: take the best-ranked among the newest candidates.
   followCandidates
@@ -53,7 +52,7 @@ export function buildFeed(agent: Agent, ctx: Prepared): FeedItem[] {
   for (let e = 0; e < exploration && fresh.length > 0; e++) {
     const i = Math.floor(ctx.rand() * fresh.length);
     const p = fresh.splice(i, 1)[0];
-    items.push({ post: p, viaId: null, slot: "exploration" });
+    items.push({ post: p, viaId: null });
     chosen.add(p.id);
   }
 
@@ -63,7 +62,7 @@ export function buildFeed(agent: Agent, ctx: Prepared): FeedItem[] {
   for (const p of ctx.ranked) {
     if (items.length >= total) break;
     if (chosen.has(p.id) || isOwn(p) || following.has(p.authorId)) continue;
-    items.push({ post: p, viaId: null, slot: "recommended" });
+    items.push({ post: p, viaId: null });
     chosen.add(p.id);
   }
 

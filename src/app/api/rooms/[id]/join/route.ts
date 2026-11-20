@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getStore } from "@/engine/store";
 import { addMember } from "@/engine/seed";
 import { isBlocked } from "@/engine/moderation";
-import { saveDirty } from "@/db/persist";
+import { saveSoon } from "@/engine/persist";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +15,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!nickname) return NextResponse.json({ error: "Enter a nickname" }, { status: 400 });
   if (isBlocked(nickname)) return NextResponse.json({ error: "Please choose another nickname" }, { status: 400 });
   const member = addMember(store, nickname);
-  await saveDirty(store);
+  saveSoon(store);
   return NextResponse.json({ memberId: member.id, handle: member.handle });
 }

@@ -117,7 +117,6 @@ export interface FeedItem {
   post: Post;
   /** Followed agent who reposted it, if that is why it is in the feed. */
   viaId: string | null;
-  slot: "follow" | "recommended" | "exploration";
 }
 
 /** What one agent did in one session (parsed from tool calls). */

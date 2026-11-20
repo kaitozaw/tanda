@@ -3,7 +3,7 @@ import { getStore, emptyCounts } from "@/engine/store";
 import { rules } from "@/engine/config";
 import { isBlocked } from "@/engine/moderation";
 import { broadcastRefresh } from "@/engine/broadcaster";
-import { saveDirty } from "@/db/persist";
+import { saveSoon } from "@/engine/persist";
 import type { Side } from "@/engine/types";
 
 export const dynamic = "force-dynamic";
@@ -27,7 +27,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (wait > 0) return NextResponse.json({ error: `Wait ${Math.ceil(wait / 1000)}s before posting again` }, { status: 429 });
 
   member.lastPostAt = Date.now();
-  store.dirty.members.add(member.id);
   const postId = `h${Date.now().toString(36)}${Math.floor(Math.random() * 1e4).toString(36)}`;
   store.addPost({
     id: postId,
@@ -44,7 +43,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     feedback: null,
     feedbackStatus: "none",
   });
-  await saveDirty(store);
+  saveSoon(store);
   broadcastRefresh(store.room.id);
   return NextResponse.json({ postId });
 }

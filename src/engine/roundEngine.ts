@@ -1,4 +1,4 @@
-import type { Agent, FeedItem, Post } from "./types";
+import type { Agent, FeedItem } from "./types";
 import type { Store } from "./store";
 import { config, rules } from "./config";
 import { buildFeed, prepare } from "./feedBuilder";
@@ -31,11 +31,12 @@ export class RoundEngine {
   constructor(
     private store: Store,
     private persist: () => Promise<void> = async () => {},
+    persistSoon: () => void = () => {},
   ) {
     this.feedback = new FeedbackWorker(store, (post) => {
       notifyFeedback(post.authorId, post.id);
       broadcastRefresh(store.room.id);
-      void this.persist();
+      persistSoon();
     });
   }
 
@@ -114,9 +115,8 @@ export class RoundEngine {
     store.room.round = round;
     store.room.requestCount += config.fakeLlm ? 0 : sessions.length;
     store.room.lastRoundMs = Date.now() - started;
-    store.markRoomDirty();
 
-    await this.persist().catch((err) => console.error("persist failed", err));
+    await this.persist();
     notifyMembers(notifications);
     broadcastRefresh(store.room.id, { round });
     this.feedback.enqueue(finalized);
@@ -149,10 +149,3 @@ function pickPosters(agents: Agent[], n: number): Set<string> {
   }
   return out;
 }
-
-export type { Post };
-
-type Globals = { __simEngine?: RoundEngine };
-const g = globalThis as Globals;
-export const setEngine = (e: RoundEngine) => (g.__simEngine = e);
-export const getEngine = () => g.__simEngine;

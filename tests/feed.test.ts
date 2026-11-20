@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildFeed, prepare } from "@/engine/feedBuilder";
-import { rank } from "@/engine/rank";
+import { buildFeed, prepare, rank } from "@/engine/feedBuilder";
 import { buildFollowGraph } from "@/engine/seed";
 import { makeAgent, makePost } from "./helpers";
 
@@ -29,9 +28,10 @@ describe("buildFeed", () => {
     expect(feed).toHaveLength(12);
     expect(new Set(ids).size).toBe(12);
     expect(ids).not.toContain("own");
-    expect(feed.filter((f) => f.slot === "follow")).toHaveLength(5);
-    expect(feed.filter((f) => f.slot === "recommended").every((f) => f.post.authorId !== "f1")).toBe(true);
-    expect(feed.filter((f) => f.slot === "exploration").every((f) => f.post.roundsSeen === 0)).toBe(true);
+    const fromFollows = feed.filter((f) => f.post.authorId === "f1" || f.viaId === "f1");
+    expect(fromFollows).toHaveLength(5);
+    expect(fromFollows.find((f) => f.post.id === "r1")?.viaId).toBe("f1");
+    expect(feed.filter((f) => f.post.roundsSeen === 0).length).toBeGreaterThanOrEqual(2); // exploration slots
   });
 });
 

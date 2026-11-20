@@ -55,10 +55,7 @@ export function seedAgents(store: Store, seeds = loadAgentSeeds()) {
   const rand = rng(7);
   const order = [...agents].sort(() => rand() - 0.5);
   buildFollowGraph(order);
-  for (const a of agents) {
-    store.agents.set(a.id, a);
-    store.dirty.agents.add(a.id);
-  }
+  for (const a of agents) store.agents.set(a.id, a);
 }
 
 /** Every member starts with exactly the same number of random agent followers (fairness). */
@@ -82,9 +79,7 @@ export function addMember(store: Store, nickname: string): Member {
     const agent = store.agents.get(ids[i])!;
     agent.followingIds.push(id);
     member.followerIds.push(agent.id);
-    store.dirty.agents.add(agent.id);
   }
   store.members.set(id, member);
-  store.dirty.members.add(id);
   return member;
 }

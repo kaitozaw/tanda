@@ -35,7 +35,7 @@ export default function Admin() {
         <button onClick={load} className="rounded bg-slate-900 px-4 py-2 text-white">Load</button>
       </div>
       <div className="flex flex-wrap gap-2">
-        {["pause", "resume", "round", "reset"].map((a) => (
+        {["pause", "resume", "reset"].map((a) => (
           <button key={a} onClick={() => act(a)} className={`rounded px-4 py-2 ${a === "reset" ? "bg-rose-600 text-white" : "bg-slate-200"}`}>{a}</button>
         ))}
       </div>

@@ -1,4 +1,6 @@
+import type { Server } from "socket.io";
 import type { Agent, Counts, Member, Post, RoomState, SimEvent } from "./types";
+import type { RoundEngine } from "./roundEngine";
 import { config, rules } from "./config";
 
 export const emptyCounts = (): Counts => ({
@@ -12,6 +14,14 @@ export const emptyCounts = (): Counts => ({
   neutralShift: 0,
   impressions: 0,
 });
+
+export interface Snapshot {
+  room: RoomState;
+  agents: Agent[];
+  members: Member[];
+  posts: Post[];
+  events: SimEvent[];
+}
 
 export class Store {
   room: RoomState = {
@@ -33,15 +43,6 @@ export class Store {
   eventsByPost = new Map<string, SimEvent[]>();
   eventSeq = 0;
 
-  /** Changes not yet saved to Postgres. */
-  dirty = {
-    agents: new Set<string>(),
-    members: new Set<string>(),
-    posts: new Set<string>(),
-    events: [] as SimEvent[],
-    room: false,
-  };
-
   author(post: Post): { handle: string; name: string } {
     if (post.authorType === "member") {
       const m = this.members.get(post.authorId);
@@ -54,7 +55,6 @@ export class Store {
   addPost(post: Post) {
     this.posts.set(post.id, post);
     this.postOrder.push(post.id);
-    this.dirty.posts.add(post.id);
   }
 
   addEvent(e: Omit<SimEvent, "id" | "createdAt">): SimEvent {
@@ -63,7 +63,6 @@ export class Store {
     const list = this.eventsByPost.get(ev.postId) ?? [];
     list.push(ev);
     this.eventsByPost.set(ev.postId, list);
-    this.dirty.events.push(ev);
     return ev;
   }
 
@@ -77,23 +76,42 @@ export class Store {
   }
 
   hasPendingHumanPosts(): boolean {
-    for (const id of this.postOrder) {
-      const p = this.posts.get(id)!;
-      if (p.authorType === "member" && !p.finalized) return true;
+    return this.activePosts().some((p) => p.authorType === "member");
+  }
+
+  snapshot(): Snapshot {
+    return {
+      room: { ...this.room, running: false },
+      agents: [...this.agents.values()],
+      members: [...this.members.values()],
+      posts: this.postOrder.map((id) => this.posts.get(id)!),
+      events: this.events,
+    };
+  }
+
+  restore(s: Snapshot) {
+    this.room = { ...s.room, running: false };
+    this.agents = new Map(s.agents.map((a) => [a.id, a]));
+    this.members = new Map(s.members.map((m) => [m.id, m]));
+    this.posts = new Map(s.posts.map((p) => [p.id, p]));
+    this.postOrder = s.posts.map((p) => p.id);
+    this.events = [];
+    this.eventsByPost = new Map();
+    for (const e of s.events) {
+      this.events.push(e);
+      const list = this.eventsByPost.get(e.postId) ?? [];
+      list.push(e);
+      this.eventsByPost.set(e.postId, list);
     }
-    return false;
-  }
-
-  markRoomDirty() {
-    this.dirty.room = true;
+    this.eventSeq = s.events.at(-1)?.id ?? 0;
   }
 }
 
-type Globals = { __simStore?: Store };
-const g = globalThis as Globals;
-
-/** One store per process, shared by server.ts and Next.js API routes (bundled separately). */
-export function getStore(): Store {
-  if (!g.__simStore) g.__simStore = new Store();
-  return g.__simStore;
-}
+/**
+ * Process-wide singletons. Next.js bundles API routes separately from server.ts, so they are
+ * shared through globalThis.
+ */
+type Sim = { store: Store; engine?: RoundEngine; io?: Server };
+const g = globalThis as { __sim?: Sim };
+export const sim: Sim = (g.__sim ??= { store: new Store() });
+export const getStore = () => sim.store;

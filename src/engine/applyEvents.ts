@@ -54,7 +54,6 @@ export function applyResults(
       store.addEvent({ round, agentId: agent.id, type, postId, viaId: item.viaId, text, stanceBefore: before, stanceAfter: after });
       post.counts[type]++;
       post.points += pointsFor(type);
-      store.dirty.posts.add(post.id);
       if (post.authorType === "member") {
         notifications.push({ memberId: post.authorId, postId, type, handle: agent.handle, text });
       }
@@ -69,34 +68,22 @@ export function applyResults(
       record("reply", postId, text.slice(0, 280));
     }
 
-    for (const id of new Set(r.follows)) {
-      const post = inFeed.get(id)?.post;
-      if (!post || agent.followingIds.includes(post.authorId)) continue;
-      agent.followingIds.push(post.authorId);
+    // follow / unfollow the author of a post in the feed (the post gets the points).
+    const setFollow = (postId: string, on: boolean) => {
+      const post = inFeed.get(postId)?.post;
+      if (!post || agent.followingIds.includes(post.authorId) === on) return;
       const author = post.authorType === "member" ? store.members.get(post.authorId) : store.agents.get(post.authorId);
-      author?.followerIds.push(agent.id);
-      if (post.authorType === "member") store.dirty.members.add(post.authorId);
-      else store.dirty.agents.add(post.authorId);
-      store.dirty.agents.add(agent.id);
-      record("follow", id);
-    }
-    for (const id of new Set(r.unfollows)) {
-      const post = inFeed.get(id)?.post;
-      if (!post || !agent.followingIds.includes(post.authorId)) continue;
-      agent.followingIds = agent.followingIds.filter((x) => x !== post.authorId);
-      const author = post.authorType === "member" ? store.members.get(post.authorId) : store.agents.get(post.authorId);
-      if (author) author.followerIds = author.followerIds.filter((x) => x !== agent.id);
-      if (post.authorType === "member") store.dirty.members.add(post.authorId);
-      else store.dirty.agents.add(post.authorId);
-      store.dirty.agents.add(agent.id);
-      record("unfollow", id);
-    }
+      agent.followingIds = on ? [...agent.followingIds, post.authorId] : agent.followingIds.filter((x) => x !== post.authorId);
+      if (author) author.followerIds = on ? [...author.followerIds, agent.id] : author.followerIds.filter((x) => x !== agent.id);
+      record(on ? "follow" : "unfollow", postId);
+    };
+    for (const id of new Set(r.follows)) setFollow(id, true);
+    for (const id of new Set(r.unfollows)) setFollow(id, false);
 
     if (r.end) {
       const before = agent.stance;
       const after = Math.max(0, Math.min(100, Math.round(r.end.stanceAfter)));
       agent.stance = after;
-      store.dirty.agents.add(agent.id);
       // Only posts the agent named, that were in its feed, count (max 2 to stop "credit everyone").
       const named = [...new Set(r.end.influencedBy)].filter((id) => inFeed.has(id)).slice(0, 2);
       for (const id of named) {
@@ -133,7 +120,6 @@ export function finalizeRound(store: Store, pool: Post[]): Post[] {
   const finalized: Post[] = [];
   for (const p of pool) {
     p.roundsSeen++;
-    store.dirty.posts.add(p.id);
     if (p.roundsSeen >= rules.roundsToFinal) {
       p.finalized = true;
       if (p.authorType === "member") {

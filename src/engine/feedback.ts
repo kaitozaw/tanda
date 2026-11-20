@@ -113,7 +113,6 @@ export class FeedbackWorker {
       post.feedback = { ...templateFeedback(post, stats), stats };
       post.feedbackStatus = "error";
     }
-    this.store.dirty.posts.add(post.id);
     this.onDone(post);
   }
 }
