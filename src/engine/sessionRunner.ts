@@ -15,6 +15,9 @@ export interface SessionInput {
 export interface RunStats {
   ok: number;
   failed: number;
+  /** Of `failed`: 429 from the API (raise the org's rate limit) and session timeouts. */
+  rateLimited: number;
+  timedOut: number;
   inputTokens: number;
   cacheReadTokens: number;
   outputTokens: number;
@@ -105,7 +108,7 @@ export function runFake(s: SessionInput, rand = Math.random): SessionResult {
 // ---------- runner ----------
 
 export async function runSessions(store: Store, sessions: SessionInput[]): Promise<{ results: SessionResult[]; stats: RunStats }> {
-  const stats: RunStats = { ok: 0, failed: 0, inputTokens: 0, cacheReadTokens: 0, outputTokens: 0 };
+  const stats: RunStats = { ok: 0, failed: 0, rateLimited: 0, timedOut: 0, inputTokens: 0, cacheReadTokens: 0, outputTokens: 0 };
   if (config.fakeLlm) {
     stats.ok = sessions.length;
     return { results: sessions.map((s) => runFake(s)), stats };
@@ -118,12 +121,18 @@ export async function runSessions(store: Store, sessions: SessionInput[]): Promi
           const r = await runReal(store, s, stats);
           stats.ok++;
           return r;
-        } catch {
-          stats.failed++; // timeout, 429, etc. counts as no action
+        } catch (err) {
+          stats.failed++; // counts as no action
+          const e = err as { status?: number; name?: string };
+          if (e.status === 429) stats.rateLimited++;
+          else if (e.name === "TimeoutError" || e.name === "AbortError" || e.name === "APIUserAbortError") stats.timedOut++;
           return emptyResult(s.agent.id);
         }
       }),
     ),
   );
+  if (stats.failed > sessions.length * 0.05) {
+    console.warn(`sessions failed: ${stats.failed}/${sessions.length} (rate limited ${stats.rateLimited}, timed out ${stats.timedOut})`);
+  }
   return { results, stats };
 }

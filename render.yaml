@@ -2,7 +2,7 @@ services:
   - type: web
     name: capture-the-narrative
     runtime: node
-    plan: starter # paid: does not sleep. Keep 1 instance: state lives in memory.
+    plan: standard # 1 CPU / 2GB for the demo burst (starter is 0.5 CPU). Keep 1 instance: state lives in memory.
     numInstances: 1
     buildCommand: npm ci --include=dev && npm run build
     startCommand: npm start
@@ -19,6 +19,10 @@ services:
       - key: AGENT_COUNT
         value: "1000"
       - key: CONCURRENCY
+        value: "1000"
+      - key: FEEDBACK_CONCURRENCY
+        value: "30"
+      - key: REFRESH_MS
         value: "1000"
       - key: DAILY_REQUEST_CAP
         value: "200000"

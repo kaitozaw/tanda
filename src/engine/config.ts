@@ -7,6 +7,10 @@ export const config = {
   concurrency: num(process.env.CONCURRENCY, 1000),
   roundMs: num(process.env.ROUND_MS, 15000),
   sessionTimeoutMs: num(process.env.SESSION_TIMEOUT_MS, 10000),
+  // Feedback for posts that finalize together must be ready within the 1-minute reveal.
+  feedbackConcurrency: num(process.env.FEEDBACK_CONCURRENCY, 30),
+  // At most one "refetch" push to the room per this many ms (see broadcaster).
+  refreshMs: num(process.env.REFRESH_MS, 1000),
   dailyRequestCap: num(process.env.DAILY_REQUEST_CAP, 200000),
   fakeLlm: process.env.FAKE_LLM === "1" || !hasLlmKey(),
   adminToken: process.env.ADMIN_TOKEN ?? "",
@@ -28,6 +32,7 @@ export const rules = {
   maxRepliesPerSession: 3,
   stanceThreshold: 5,
   maxPostChars: 280,
+  postCooldownMs: 5000, // per member, so one person cannot flood the room
   points: {
     like: 5,
     repost: 10,

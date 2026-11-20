@@ -94,7 +94,7 @@ function templateFeedback(post: Post, stats: FeedbackStats): Omit<Feedback, "sta
 }
 
 export class FeedbackWorker {
-  private limit = pLimit(5);
+  private limit = pLimit(config.feedbackConcurrency);
   constructor(private store: Store, private onDone: (post: Post) => void) {}
 
   enqueue(posts: Post[]) {
