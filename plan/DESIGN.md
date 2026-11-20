@@ -43,16 +43,18 @@ How we build what [PRODUCT.md](PRODUCT.md) describes. Rules (feed slots, scoring
 - Render web service. `ANTHROPIC_API_KEY` as an env var (never committed).
 
 ## Data (Postgres, cached in memory)
-One table per type below.
+One table per type below, each row stored as `jsonb` (shapes live in `src/engine/types.ts`).
 ```ts
-Room    { id, topic, agents: Agent[], members: Member[], posts: Post[], events: Event[], round, status }
+Room    { id, topic, round, paused, running, lastRoundMs, requestDay, requestCount }
 Member  { id, nickname, followerIds: AgentId[], lastPostAt }
 Agent   { id, handle, persona: { age, region, role, leaning, interests, activity, openness },
           stance /* 0-100 */, followingIds: (AgentId | MemberId)[], followerIds: AgentId[] }
 Post    { id, authorType: "agent" | "member", authorId, text, side: "for" | "against" | "neutral",
-          createdRound, repostOf?, counts: { like, repost, reply }, points, finalized, feedback? }
-Event   { round, agentId, type: "like" | "repost" | "reply" | "follow" | "unfollow" | "post" | "stance",
-          postId?, targetId?, text?, stanceBefore?, stanceAfter?, influencedBy? }
+          createdRound, roundsSeen, counts: { like, repost, reply, follow, unfollow, persuasion,
+          backlash, neutralShift, impressions }, points, finalized, feedback?, feedbackStatus }
+Event   { id, round, agentId, type: "like" | "repost" | "reply" | "follow" | "unfollow" |
+          "persuasion" | "backlash" | "neutralShift", postId, viaId? /* reposter, for the spread graph */,
+          text?, stanceBefore?, stanceAfter? }
 ```
 - `agents.json` (1,000 personas) is generated once before the demo and loaded at startup.
 - `events` is the engagement log. Points, notifications and feedback are all computed from it.
@@ -62,7 +64,7 @@ Event   { round, agentId, type: "like" | "repost" | "reply" | "follow" | "unfoll
 |---|---|
 | `seed` | Load `agents.json`. Build a power-law follow graph between agents. Give each new member 100 random agent followers. |
 | `roundEngine` | Every 15s: skip if the previous round is still running, then run the steps below and increment `round`. Runs only while some human post is not final yet: starts on a member's post, stops when the last one is final (saves API budget). Stops for the day at a daily request cap (config). |
-| `feedBuilder` | Build each agent's 12-post feed (follows / `rank` / exploration). Drop posts older than 4 rounds. |
+| `feedBuilder` | Build each agent's 12-post feed (follows / exploration / `rank`). Drop posts older than 4 rounds. |
 | `sessionRunner` | One Haiku request per agent. Shared rules and tools first (prompt cache), then persona, stance and feed. Post text is wrapped as data. 10s timeout. |
 | `applyEvents` | Validate tool calls (post must be in that agent's feed, max 3 replies), append events, update counts, follows and stance. |
 | `scorer` | Add points per PRODUCT.md. Check Persuasion / Backlash from `end_session`. |
@@ -74,4 +76,5 @@ Event   { round, agentId, type: "like" | "repost" | "reply" | "follow" | "unfoll
 - `POST /api/rooms/:id/join` → member id (nickname)
 - `POST /api/rooms/:id/posts` → checks length, 10s cooldown, word filter
 - `GET /api/rooms/:id` → current state (on page load)
-- Admin: start / stop rounds, reset room, set agent count
+- `GET /api/rooms/:id/spread/:postId` → nodes and links for the spread graph
+- `/admin` (`ADMIN_TOKEN`): pause, resume, run a round now, reset room. Agent count is set with `AGENT_COUNT` + reset.

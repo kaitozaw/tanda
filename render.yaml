@@ -1,0 +1,32 @@
+services:
+  - type: web
+    name: pre-post
+    runtime: node
+    plan: starter # paid: does not sleep. Keep 1 instance: state lives in memory.
+    numInstances: 1
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/rooms/au-u16-ban
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: ANTHROPIC_API_KEY
+        sync: false # set in the Render dashboard
+      - key: ADMIN_TOKEN
+        generateValue: true
+      - key: FAKE_LLM
+        value: "0"
+      - key: AGENT_COUNT
+        value: "1000"
+      - key: CONCURRENCY
+        value: "1000"
+      - key: DAILY_REQUEST_CAP
+        value: "200000"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: pre-post-db
+          property: connectionString
+
+databases:
+  - name: pre-post-db
+    plan: basic-256mb
