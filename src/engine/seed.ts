@@ -1,7 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
-import type { Agent, Member } from "./types";
-import { Store } from "./store";
+import type { Agent, Member, Side } from "./types";
+import { Store, emptyCounts } from "./store";
+import { sideFromStance } from "./applyEvents";
 import { rules } from "./config";
 
 type AgentSeed = Pick<Agent, "id" | "handle" | "stance" | "persona">;
@@ -56,6 +57,53 @@ export function seedAgents(store: Store, seeds = loadAgentSeeds()) {
   const order = [...agents].sort(() => rand() - 0.5);
   buildFollowGraph(order);
   for (const a of agents) store.agents.set(a.id, a);
+}
+
+type PostSeed = { side: Side; text: string };
+
+/** Starter posts for a room, from data/rooms/<roomId>/posts.json. No file = no starter posts. */
+export function loadPostSeeds(roomId: string, dir = path.resolve("data/rooms")): PostSeed[] {
+  const file = path.join(dir, roomId, "posts.json");
+  if (!fs.existsSync(/*turbopackIgnore: true*/ file)) return [];
+  return JSON.parse(fs.readFileSync(/*turbopackIgnore: true*/ file, "utf8")) as PostSeed[];
+}
+
+/**
+ * Put the room's starter posts on the timeline, so it is not empty before anyone posts. Each one
+ * gets an active agent whose current stance is on the post's side (deterministic, one post per
+ * agent), and they are spaced a few minutes apart, oldest first.
+ */
+export function seedPosts(store: Store, seeds = loadPostSeeds(store.room.id), now = Date.now()) {
+  const rand = rng(11);
+  const used = new Set<string>();
+  const agents = store.activeAgents();
+  seeds.forEach((s, i) => {
+    const pool = agents.filter((a) => sideFromStance(a.stance) === s.side && !used.has(a.id));
+    if (pool.length === 0) return;
+    const author = pool[Math.floor(rand() * pool.length)];
+    used.add(author.id);
+    store.addPost({
+      id: `seed${String(i + 1).padStart(2, "0")}`,
+      authorType: "agent",
+      authorId: author.id,
+      text: s.text.slice(0, rules.maxPostChars),
+      side: s.side,
+      createdAt: now - (seeds.length - i) * 3 * 60_000,
+      createdRound: 0,
+      roundsSeen: 0,
+      counts: emptyCounts(),
+      points: 0,
+      finalized: false,
+      feedback: null,
+      feedbackStatus: "none",
+    });
+  });
+}
+
+/** A fresh room: agents with their follow graph, then the starter posts. */
+export function seedRoom(store: Store) {
+  seedAgents(store);
+  seedPosts(store);
 }
 
 /** Every member starts with exactly the same number of random agent followers (fairness). */

@@ -1,5 +1,5 @@
 import { Store, sim } from "./store";
-import { seedAgents } from "./seed";
+import { seedRoom } from "./seed";
 import { RoundEngine } from "./roundEngine";
 import { load, save, saveSoon } from "./persist";
 import { broadcastRefresh } from "./broadcaster";
@@ -10,7 +10,7 @@ export async function boot() {
   const store = sim.store;
   const restored = await load(store);
   if (!restored) {
-    seedAgents(store);
+    seedRoom(store);
     await save(store);
   }
   sim.engine = new RoundEngine(store, () => save(store), () => saveSoon(store));
@@ -23,12 +23,12 @@ export async function boot() {
   );
 }
 
-/** Admin reset: wipe members, posts and events, and re-seed agents (stance and follows). */
+/** Admin reset: wipe members, posts and events, then re-seed agents (stance and follows) and starter posts. */
 export async function reset() {
   const store = sim.store;
   const fresh = new Store();
   fresh.room = { ...fresh.room, paused: store.room.paused, requestDay: store.room.requestDay, requestCount: store.room.requestCount };
-  seedAgents(fresh);
+  seedRoom(fresh);
   store.restore(fresh.snapshot());
   await save(store);
   broadcastRefresh(store.room.id, { reset: true });
