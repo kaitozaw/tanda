@@ -31,16 +31,16 @@ export default function Admin() {
     <main className="mx-auto max-w-2xl space-y-4 px-4 py-8">
       <h1 className="text-2xl font-bold">Admin</h1>
       <div className="flex gap-2">
-        <input type="password" value={token} onChange={(e) => setToken(e.target.value)} placeholder="Admin token" className="flex-1 rounded border px-3 py-2" />
-        <button onClick={load} className="rounded bg-slate-900 px-4 py-2 text-white">Load</button>
+        <input type="password" value={token} onChange={(e) => setToken(e.target.value)} placeholder="Admin token" className="flex-1 rounded-md border border-line bg-transparent px-3 py-2 outline-none focus:border-accent" />
+        <button onClick={load} className="rounded-full bg-accent px-4 py-2 font-bold text-white">Load</button>
       </div>
       <div className="flex flex-wrap gap-2">
         {["pause", "resume", "reset"].map((a) => (
-          <button key={a} onClick={() => act(a)} className={`rounded px-4 py-2 ${a === "reset" ? "bg-rose-600 text-white" : "bg-slate-200"}`}>{a}</button>
+          <button key={a} onClick={() => act(a)} className={`rounded-full border px-4 py-2 font-bold ${a === "reset" ? "border-like text-like" : "border-line"}`}>{a}</button>
         ))}
       </div>
-      {error && <p className="text-rose-600">{error}</p>}
-      {status !== null && <pre className="overflow-x-auto rounded bg-white p-4 text-xs">{JSON.stringify(status, null, 2)}</pre>}
+      {error && <p className="text-like">{error}</p>}
+      {status !== null && <pre className="overflow-x-auto rounded-2xl border border-line p-4 text-xs text-muted">{JSON.stringify(status, null, 2)}</pre>}
     </main>
   );
 }

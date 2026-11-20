@@ -13,7 +13,7 @@ How we build what [PRODUCT.md](PRODUCT.md) describes. Rules (feed slots, scoring
 ┌─────────┴────────── Render: one Node.js process ─┴───────────────────┐
 │                                                  │                   │
 │  Next.js: pages + API routes         Socket.IO: realtime push        │
-│   checks length, cooldown, filter                ▲                   │
+│   checks length, word filter                     ▲                   │
 │         │                                        │ round results     │
 │         ▼                                        │                   │
 │  In-memory state  ◀────────────────▶  Round engine (every 15s)       │
@@ -36,7 +36,7 @@ How we build what [PRODUCT.md](PRODUCT.md) describes. Rules (feed slots, scoring
 
 ## Tech stack
 - TypeScript, Next.js with a custom server (`server.ts`), so the UI, the API, Socket.IO and the engine run in one process.
-- Tailwind for UI; `react-force-graph-2d` for the network spread view.
+- Tailwind for UI.
 - `@anthropic-ai/sdk`. Agents: `claude-haiku-5-5`, thinking off. Feedback: `claude-sonnet-5-5`.
 - `p-limit` to cap concurrent API calls.
 - Render Postgres via plain `pg`: one `snapshots` table, one `jsonb` row per room.
@@ -46,15 +46,14 @@ How we build what [PRODUCT.md](PRODUCT.md) describes. Rules (feed slots, scoring
 Saved together as one `jsonb` snapshot per room (shapes live in `src/engine/types.ts`).
 ```ts
 Room    { id, topic, round, paused, running, lastRoundMs, requestDay, requestCount }
-Member  { id, nickname, followerIds: AgentId[], lastPostAt }
+Member  { id, nickname, handle, followerIds: AgentId[], joinedAt }
 Agent   { id, handle, persona: { age, region, role, leaning, interests, activity, openness },
           stance /* 0-100 */, followingIds: (AgentId | MemberId)[], followerIds: AgentId[] }
 Post    { id, authorType: "agent" | "member", authorId, text, side: "for" | "against" | "neutral",
           createdRound, roundsSeen, counts: { like, repost, reply, follow, unfollow, persuasion,
           backlash, neutralShift, impressions }, points, finalized, feedback?, feedbackStatus }
 Event   { id, round, agentId, type: "like" | "repost" | "reply" | "follow" | "unfollow" |
-          "persuasion" | "backlash" | "neutralShift", postId, viaId? /* reposter, for the spread graph */,
-          text?, stanceBefore?, stanceAfter? }
+          "persuasion" | "backlash" | "neutralShift", postId, text?, stanceBefore?, stanceAfter? }
 ```
 - `agents.json` (1,000 personas) is generated once before the demo and loaded at startup.
 - `events` is the engagement log. Points, notifications and feedback are all computed from it.
@@ -74,7 +73,6 @@ Event   { id, round, agentId, type: "like" | "repost" | "reply" | "follow" | "un
 
 **API**
 - `POST /api/rooms/:id/join` → member id (nickname)
-- `POST /api/rooms/:id/posts` → checks length, 10s cooldown, word filter
+- `POST /api/rooms/:id/posts` → checks length, word filter
 - `GET /api/rooms/:id` → current state (on page load)
-- `GET /api/rooms/:id/spread/:postId` → nodes and links for the spread graph
 - `/admin` (`ADMIN_TOKEN`): pause, resume, run a round now, reset room. Agent count is set with `AGENT_COUNT` + reset.

@@ -67,7 +67,6 @@ export function addMember(store: Store, nickname: string): Member {
     nickname,
     handle: `${base}_${id.slice(-3)}`,
     followerIds: [],
-    lastPostAt: 0,
     joinedAt: Date.now(),
   };
   const ids = store.activeAgents().map((a) => a.id);

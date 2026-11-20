@@ -29,7 +29,6 @@ export interface Member {
   nickname: string;
   handle: string;
   followerIds: string[];
-  lastPostAt: number;
   joinedAt: number;
 }
 
@@ -54,10 +53,10 @@ export interface Feedback {
 }
 
 export interface FeedbackStats {
-  reach: number;
-  engagementRate: number;
-  backlashRisk: "low" | "medium" | "high";
-  segments: { segment: string; engaged: number; persuaded: number; backlash: number }[];
+  views: number;
+  /** (like + repost + reply + follow + unfollow) / views, same as the dashboard's reactions. */
+  reactionRate: number;
+  segments: { segment: string; reacted: number; persuaded: number; backlash: number }[];
 }
 
 export interface Post {
@@ -93,8 +92,6 @@ export interface SimEvent {
   agentId: string;
   type: EventType;
   postId: string;
-  /** Agent whose repost brought the post into this agent's feed (for the spread graph). */
-  viaId: string | null;
   text: string | null;
   stanceBefore: number | null;
   stanceAfter: number | null;

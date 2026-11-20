@@ -9,24 +9,28 @@ const ROOMS = [
 
 export default function Home() {
   return (
-    <main className="mx-auto max-w-2xl px-4 py-10">
-      <h1 className="text-3xl font-bold tracking-tight">Pre-Post</h1>
-      <p className="mt-2 text-slate-600">
-        Test your post on 1,000 AI agents before you publish. See one hour of social media engagement in one minute.
-      </p>
-      <h2 className="mt-8 mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">Rooms</h2>
-      <ul className="space-y-3">
+    <main className="mx-auto min-h-screen max-w-[600px] border-x border-line">
+      <header className="border-b border-line px-4 py-8">
+        <h1 className="text-3xl font-extrabold tracking-tight">Capture the Narrative</h1>
+        <p className="mt-2 text-muted">
+          Test your post on 1,000 AI agents before you publish. See one hour of social media engagement in one minute.
+        </p>
+      </header>
+      <h2 className="px-4 pt-4 pb-2 text-xl font-extrabold">Rooms</h2>
+      <ul>
         {ROOMS.map((r) => (
-          <li key={r.id}>
+          <li key={r.id} className="border-b border-line">
             {r.enabled ? (
-              <Link href={`/rooms/${r.id}`} className="block rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-slate-400">
-                <div className="font-semibold">{r.topic}</div>
-                <div className="mt-1 text-sm text-slate-500">{r.audience}</div>
+              <Link href={`/rooms/${r.id}`} className="block px-4 py-3 transition hover:bg-white/[0.03]">
+                <div className="text-[13px] text-repost">● Live</div>
+                <div className="font-bold">{r.topic}</div>
+                <div className="text-sm text-muted">{r.audience}</div>
               </Link>
             ) : (
-              <div className="rounded-xl border border-dashed border-slate-300 p-4 text-slate-400">
-                <div className="font-semibold">{r.topic}</div>
-                <div className="mt-1 text-sm">Coming soon</div>
+              <div className="px-4 py-3 opacity-50">
+                <div className="text-[13px] text-muted">Coming soon</div>
+                <div className="font-bold">{r.topic}</div>
+                <div className="text-sm text-muted">{r.audience}</div>
               </div>
             )}
           </li>

@@ -28,6 +28,6 @@ export function storeWith(agents: Agent[], posts: Post[]): Store {
   const s = new Store();
   for (const a of agents) s.agents.set(a.id, a);
   for (const p of posts) s.addPost(p);
-  s.members.set("m1", { id: "m1", nickname: "Kai", handle: "kai_1", followerIds: [], lastPostAt: 0, joinedAt: 0 });
+  s.members.set("m1", { id: "m1", nickname: "Kai", handle: "kai_1", followerIds: [], joinedAt: 0 });
   return s;
 }

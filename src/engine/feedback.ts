@@ -9,28 +9,27 @@ import { config, rules } from "./config";
 
 export function computeStats(store: Store, post: Post): FeedbackStats {
   const events = store.eventsByPost.get(post.id) ?? [];
-  const bySeg = new Map<string, { segment: string; engaged: number; persuaded: number; backlash: number }>();
-  const engagedAgents = new Set<string>();
+  // reacted: people who used a reaction tool (like / repost / reply / follow / unfollow), counted once.
+  // persuaded: view changes toward the poster (persuasion, or any shift on a neutral post). backlash: away.
+  const bySeg = new Map<string, FeedbackStats["segments"][number]>();
+  const reacted = new Set<string>();
   for (const e of events) {
     const seg = store.agents.get(e.agentId)?.persona.segment ?? "Other";
-    const row = bySeg.get(seg) ?? { segment: seg, engaged: 0, persuaded: 0, backlash: 0 };
-    if (e.type === "persuasion") row.persuaded++;
-    else if (e.type === "backlash" || e.type === "unfollow") row.backlash++;
-    else if (!engagedAgents.has(`${seg}:${e.agentId}`)) {
-      row.engaged++;
-      engagedAgents.add(`${seg}:${e.agentId}`);
+    const row = bySeg.get(seg) ?? { segment: seg, reacted: 0, persuaded: 0, backlash: 0 };
+    if (e.type === "persuasion" || e.type === "neutralShift") row.persuaded++;
+    else if (e.type === "backlash") row.backlash++;
+    else if (!reacted.has(e.agentId)) {
+      row.reacted++;
+      reacted.add(e.agentId);
     }
     bySeg.set(seg, row);
   }
-  const engagements = post.counts.like + post.counts.repost + post.counts.reply;
-  const negative = post.counts.backlash + post.counts.unfollow;
-  const positive = post.counts.persuasion + engagements;
-  const ratio = negative / Math.max(1, positive);
+  const c = post.counts;
+  const reactions = c.like + c.repost + c.reply + c.follow + c.unfollow;
   return {
-    reach: post.counts.impressions,
-    engagementRate: post.counts.impressions ? engagements / post.counts.impressions : 0,
-    backlashRisk: ratio > 0.25 ? "high" : ratio > 0.08 ? "medium" : "low",
-    segments: [...bySeg.values()].sort((a, b) => b.engaged + b.persuaded - (a.engaged + a.persuaded)),
+    views: c.impressions,
+    reactionRate: c.impressions ? reactions / c.impressions : 0,
+    segments: [...bySeg.values()].sort((a, b) => b.reacted + b.persuaded - (a.reacted + a.persuaded)),
   };
 }
 
@@ -56,7 +55,7 @@ async function llmFeedback(store: Store, post: Post, stats: FeedbackStats): Prom
     .join("\n");
   const segs = stats.segments
     .slice(0, 8)
-    .map((s) => `- ${s.segment}: engaged ${s.engaged}, persuaded ${s.persuaded}, backlash ${s.backlash}`)
+    .map((s) => `- ${s.segment}: reacted ${s.reacted}, persuaded ${s.persuaded}, backlash ${s.backlash}`)
     .join("\n");
   const c = post.counts;
   const res = await client.messages.parse({
@@ -70,10 +69,10 @@ async function llmFeedback(store: Store, post: Post, stats: FeedbackStats): Prom
 
 <post>${post.text}</post>
 
-Results after one simulated hour: reach ${stats.reach}, engagement rate ${(stats.engagementRate * 100).toFixed(1)}%, likes ${c.like}, reposts ${c.repost}, replies ${c.reply}, follows ${c.follow}, unfollows ${c.unfollow}, persuaded ${c.persuasion}, backlash ${c.backlash}, points ${post.points}.
+Results after one simulated hour: views ${stats.views}, reaction rate ${(stats.reactionRate * 100).toFixed(1)}%, likes ${c.like}, reposts ${c.repost}, replies ${c.reply}, follows ${c.follow}, unfollows ${c.unfollow}, persuaded ${c.persuasion}, backlash ${c.backlash}, points ${post.points}.
 
 By audience segment:
-${segs || "- no engagement"}
+${segs || "- no reactions"}
 
 Sample replies:
 ${replies || "- none"}`,
@@ -87,7 +86,7 @@ ${replies || "- none"}`,
 function templateFeedback(post: Post, stats: FeedbackStats): Omit<Feedback, "stats"> {
   const top = stats.segments[0]?.segment ?? "no segment";
   return {
-    verdict: `Reached ${stats.reach} people with a ${(stats.engagementRate * 100).toFixed(1)}% engagement rate; strongest with ${top}.`,
+    verdict: `${stats.views} views with a ${(stats.reactionRate * 100).toFixed(1)}% reaction rate; strongest with ${top}.`,
     whatWorked: [post.text.length > 120 ? "Gave enough context for people to react to." : "Short and easy to read."],
     improvements: ["Add a concrete example or number.", "End with a question to invite replies.", "Speak to the people who disagree, not only your side."],
     rewrite: post.text,

@@ -28,7 +28,6 @@ export const rules = {
   maxRepliesPerSession: 3,
   stanceThreshold: 5,
   maxPostChars: 280,
-  postCooldownMs: 10000,
   points: {
     like: 5,
     repost: 10,

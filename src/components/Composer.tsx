@@ -1,22 +1,14 @@
 "use client";
-import { useEffect, useState } from "react";
-import { SIDE_LABEL, SIDE_STYLE } from "./ui";
+import { useState } from "react";
+import { Avatar, SIDE_LABEL } from "./ui";
 
 const MAX = 280;
 
-export default function Composer({ cooldownMs, onPost }: { cooldownMs: number; onPost: (text: string, side: string) => Promise<void> }) {
+export default function Composer({ name, onPost }: { name: string; onPost: (text: string, side: string) => Promise<void> }) {
   const [text, setText] = useState("");
   const [side, setSide] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [wait, setWait] = useState(0);
-
-  useEffect(() => setWait(Math.ceil(cooldownMs / 1000)), [cooldownMs]);
-  useEffect(() => {
-    if (wait <= 0) return;
-    const t = setTimeout(() => setWait((w) => w - 1), 1000);
-    return () => clearTimeout(t);
-  }, [wait]);
 
   async function submit() {
     if (!side) return setError("Pick your side first");
@@ -25,7 +17,6 @@ export default function Composer({ cooldownMs, onPost }: { cooldownMs: number; o
     try {
       await onPost(text, side);
       setText("");
-      setWait(10);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -33,37 +24,41 @@ export default function Composer({ cooldownMs, onPost }: { cooldownMs: number; o
     }
   }
 
+  const left = MAX - text.length;
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="mb-2 flex flex-wrap gap-2">
-        {(["for", "against", "neutral"] as const).map((s) => (
+    <div className="flex gap-3 border-b border-line px-4 py-3">
+      <Avatar name={name} me />
+      <div className="min-w-0 flex-1">
+        <textarea
+          value={text}
+          onChange={(e) => setText(e.target.value.slice(0, MAX))}
+          rows={2}
+          placeholder="What's your campaign message?"
+          className="w-full resize-none bg-transparent py-2 text-xl placeholder:text-muted outline-none"
+        />
+        <div className="flex flex-wrap gap-2 pb-3">
+          {(["for", "against", "neutral"] as const).map((s) => (
+            <button
+              key={s}
+              onClick={() => setSide(s)}
+              className={`rounded-full border px-3 py-1 text-sm font-bold transition ${side === s ? "border-accent bg-accent/10 text-accent" : "border-line text-muted hover:border-accent hover:text-accent"}`}
+            >
+              {SIDE_LABEL[s]}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center justify-end gap-3 border-t border-line pt-3">
+          {text.length > 0 && <span className={`text-sm tabular-nums ${left <= 20 ? "text-like" : "text-muted"}`}>{left}</span>}
           <button
-            key={s}
-            onClick={() => setSide(s)}
-            className={`rounded-full px-3 py-1 text-sm font-medium transition ${side === s ? SIDE_STYLE[s] + " ring-2 ring-offset-1 ring-slate-400" : "bg-slate-100 text-slate-600"}`}
+            onClick={submit}
+            disabled={busy || !text.trim()}
+            className="rounded-full bg-accent px-5 py-1.5 font-bold text-white transition hover:bg-accent-dim disabled:opacity-50"
           >
-            {SIDE_LABEL[s]}
+            {busy ? "Posting…" : "Post"}
           </button>
-        ))}
+        </div>
+        {error && <p className="mt-2 text-sm text-like">{error}</p>}
       </div>
-      <textarea
-        value={text}
-        onChange={(e) => setText(e.target.value.slice(0, MAX))}
-        rows={3}
-        placeholder="Write your campaign post…"
-        className="w-full resize-none rounded-lg border border-slate-200 p-3 outline-none focus:border-slate-400"
-      />
-      <div className="mt-2 flex items-center justify-between">
-        <span className={`text-xs ${text.length > MAX - 20 ? "text-rose-600" : "text-slate-400"}`}>{text.length}/{MAX}</span>
-        <button
-          onClick={submit}
-          disabled={busy || wait > 0 || !text.trim()}
-          className="rounded-full bg-slate-900 px-5 py-2 text-sm font-semibold text-white disabled:opacity-40"
-        >
-          {wait > 0 ? `Wait ${wait}s` : busy ? "Posting…" : "Post"}
-        </button>
-      </div>
-      {error && <p className="mt-2 text-sm text-rose-600">{error}</p>}
     </div>
   );
 }

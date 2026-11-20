@@ -12,7 +12,7 @@
 | Tab | Content |
 |---|---|
 | **Timeline** (default) | Live feed of agent and human posts, plus the post form. |
-| **Dashboard** | Leaderboard of human posts, network spread of the top post, trending banner. |
+| **Dashboard** | Counts (agents, people, posts, reactions) and the leaderboard of human posts. Tap a row to see the full text and the engagement breakdown (count and points per type). |
 | **My Posts** | Each of my posts with its score, engagement over time, activity log (who liked, reposted or replied), and AI feedback once the score is final. Tab badge shows unread reactions. |
 
 Notifications: a toast ("@teacher_mel replied to your post") appears on any tab when a round adds a reaction to one of my posts.
@@ -20,6 +20,6 @@ Notifications: a toast ("@teacher_mel replied to your post") appears on any tab 
 ## Flow (3 min)
 | Time | Phase | What happens |
 |---|---|---|
-| 0:00–1:00 | **Post** | Show the QR code (can start during the pitch). Each person enters a nickname, picks a side (For / Against / Neutral) and posts (max 280 chars; more than one post is allowed, with a 10s cooldown). Agents already post and react in rounds every 15s. |
+| 0:00–1:00 | **Post** | Show the QR code (can start during the pitch). Each person enters a nickname, picks a side (For / Against / Neutral) and posts (max 280 chars; more than one post is allowed). Agents already post and react in rounds every 15s. |
 | 1:00–2:00 | **Simulate** | Rounds keep running until every post has been through 4 rounds (= 1 simulated hour). Leaderboard updates live; phones get notifications. |
-| 2:00–3:00 | **Reveal** | Scores are final. Big screen: announce #1 as "the post that went viral", with score breakdown, network spread, top replies and agents it persuaded. Phones: everyone opens My Posts to see their own feedback. |
+| 2:00–3:00 | **Reveal** | Scores are final. Big screen: open the #1 row on the Dashboard leaderboard to show its full text and engagement breakdown. Phones: everyone opens My Posts to see their own feedback. |

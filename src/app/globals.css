@@ -1,8 +1,20 @@
 @import "tailwindcss";
 
-:root { color-scheme: light; }
-body { background: #f5f6f8; color: #0f172a; }
+/* X-like dark theme. Use as bg-bg, text-ink, text-muted, border-line, bg-accent, bg-card… */
+@theme {
+  --color-bg: #000000;
+  --color-card: #16181c;
+  --color-hover: #080808;
+  --color-line: #2f3336;
+  --color-ink: #e7e9ea;
+  --color-muted: #71767b;
+  --color-accent: #1d9bf0;
+  --color-accent-dim: #1a8cd8;
+  --color-like: #f91880;
+  --color-repost: #00ba7c;
+}
+
+:root { color-scheme: dark; }
+body { background: var(--color-bg); color: var(--color-ink); }
 @keyframes toast-in { from { transform: translateY(12px); opacity: 0; } to { transform: none; opacity: 1; } }
 .toast-in { animation: toast-in 0.25s ease-out; }
-@keyframes flash { from { background: #fef9c3; } to { background: transparent; } }
-.flash { animation: flash 1.2s ease-out; }

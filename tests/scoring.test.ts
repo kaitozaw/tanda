@@ -102,3 +102,20 @@ describe("repeat exposure", () => {
     expect(post.counts.reply).toBe(1);
   });
 });
+
+describe("computeStats segments", () => {
+  it("reacted = unique agents using reaction tools; persuaded includes neutral shifts; backlash only backlash", async () => {
+    const { computeStats } = await import("@/engine/feedback");
+    const a = makeAgent("a1"), b = makeAgent("a2");
+    const post = makePost("p1", "m1", "neutral");
+    const store = storeWith([a, b], [post]);
+    const ev = (agentId: string, type: Parameters<typeof store.addEvent>[0]["type"]) =>
+      store.addEvent({ round: 1, agentId, type, postId: "p1", text: null, stanceBefore: null, stanceAfter: null });
+    ev("a1", "like"); ev("a1", "reply"); ev("a2", "unfollow"); ev("a1", "neutralShift"); ev("a2", "backlash");
+    post.counts = { ...post.counts, like: 1, reply: 1, unfollow: 1, impressions: 10 };
+    const stats = computeStats(store, post);
+    expect(stats.segments).toEqual([{ segment: "Teachers & educators", reacted: 2, persuaded: 1, backlash: 1 }]);
+    expect(stats.views).toBe(10);
+    expect(stats.reactionRate).toBeCloseTo(0.3);
+  });
+});

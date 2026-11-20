@@ -46,15 +46,6 @@ export function roomView(store: Store, memberId: string | null) {
   const ranked = memberPosts(store).sort((a, b) => b.points - a.points);
   const leaderboard = ranked.slice(0, 10).map((p) => ({ ...postView(store, p), nickname: store.author(p).name }));
 
-  const topPost = ranked[0];
-  const top = topPost
-    ? {
-        post: postView(store, topPost),
-        replies: (store.eventsByPost.get(topPost.id) ?? []).filter((e) => e.type === "reply").slice(-5).map((e) => eventView(store, e)),
-        persuaded: (store.eventsByPost.get(topPost.id) ?? []).filter((e) => e.type === "persuasion").slice(-5).map((e) => eventView(store, e)),
-      }
-    : null;
-
   const member = memberId ? store.members.get(memberId) : undefined;
   const me = member
     ? {
@@ -62,7 +53,6 @@ export function roomView(store: Store, memberId: string | null) {
         nickname: member.nickname,
         handle: member.handle,
         followers: member.followerIds.length,
-        cooldownMs: Math.max(0, member.lastPostAt + rules.postCooldownMs - Date.now()),
         posts: memberPosts(store)
           .filter((p) => p.authorId === member.id)
           .reverse()
@@ -84,40 +74,18 @@ export function roomView(store: Store, memberId: string | null) {
       lastRoundMs: store.room.lastRoundMs,
       roundsToFinal: rules.roundsToFinal,
       simMinutesPerRound: rules.simMinutesPerRound,
+      points: rules.points,
     },
     stats: {
       agents: Math.min(store.agents.size, config.agentCount),
       members: store.members.size,
       posts: store.posts.size,
-      events: store.events.length,
+      // Reactions to human posts only (view changes are shown per post in the leaderboard).
+      reactions: memberPosts(store).reduce((n, p) => n + p.counts.like + p.counts.repost + p.counts.reply + p.counts.follow + p.counts.unfollow, 0),
     },
     timeline,
     leaderboard,
-    top,
     me,
   };
 }
 export type RoomView = ReturnType<typeof roomView>;
-
-/** Nodes and links showing how a post spread: author -> agents, or reposter -> agents. */
-export function spreadView(store: Store, postId: string) {
-  const post = store.posts.get(postId);
-  if (!post) return null;
-  const author = store.author(post);
-  const nodes = new Map<string, { id: string; label: string; kind: string }>();
-  const links: { source: string; target: string; kind: string }[] = [];
-  nodes.set(post.authorId, { id: post.authorId, label: `@${author.handle}`, kind: "author" });
-  const strength = ["like", "follow", "reply", "repost", "neutralShift", "unfollow", "backlash", "persuasion"];
-  for (const e of store.eventsByPost.get(postId) ?? []) {
-    const node = nodes.get(e.agentId);
-    if (node) {
-      if (strength.indexOf(e.type) > strength.indexOf(node.kind)) node.kind = e.type;
-      continue;
-    }
-    const a = store.agents.get(e.agentId);
-    nodes.set(e.agentId, { id: e.agentId, label: `@${a?.handle} (${a?.persona.role})`, kind: e.type });
-    const via = e.viaId && nodes.has(e.viaId) ? e.viaId : null;
-    links.push({ source: via ?? post.authorId, target: e.agentId, kind: via ? "via-repost" : "direct" });
-  }
-  return { nodes: [...nodes.values()], links };
-}

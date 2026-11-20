@@ -51,7 +51,7 @@ export function applyResults(
     const record = (type: EventType, postId: string, text: string | null = null, before: number | null = null, after: number | null = null) => {
       const item = inFeed.get(postId)!;
       const post = item.post;
-      store.addEvent({ round, agentId: agent.id, type, postId, viaId: item.viaId, text, stanceBefore: before, stanceAfter: after });
+      store.addEvent({ round, agentId: agent.id, type, postId, text, stanceBefore: before, stanceAfter: after });
       post.counts[type]++;
       post.points += pointsFor(type);
       if (post.authorType === "member") {

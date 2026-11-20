@@ -43,11 +43,11 @@ A stance change only counts for posts the agent listed in `influenced_by`.
 
 ## Feedback
 When a post's score is final, one LLM call reads the engagement log and returns:
-- reach, engagement rate, reactions by segment, backlash risk
+- views, reaction rate, reactions by segment
 - concrete improvements and a rewrite
 
 ## Guardrails
-- 280 chars; 10s cooldown between posts per user; word filter.
+- 280 chars; word filter.
 - Posts are treated as data in prompts, not as instructions (prompt-injection guard).
 - Agent count and concurrency are config values (`AGENT_COUNT`, `CONCURRENCY`), so they can be lowered if we hit the rate limit.
 - Rounds run only while a human post is waiting for its final score; otherwise the timeline is idle. Daily request cap.

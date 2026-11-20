@@ -1,4 +1,4 @@
-# Pre-Post
+# Capture the Narrative
 
 Test a social media post on 1,000 AI agents and see one simulated hour of engagement in one minute.
 Specs: [plan/PRODUCT.md](plan/PRODUCT.md), [plan/DESIGN.md](plan/DESIGN.md), [plan/DEMONSTRATION.md](plan/DEMONSTRATION.md).

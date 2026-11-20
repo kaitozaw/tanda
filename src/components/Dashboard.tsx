@@ -1,86 +1,108 @@
 "use client";
+import { useState } from "react";
 import type { RoomView } from "@/engine/views";
-import SpreadGraph from "./SpreadGraph";
-import { Counts, PostCard, SideBadge } from "./ui";
+import { Avatar, Progress, SideBadge, compact } from "./ui";
+
+const ROWS = [
+  ["like", "Likes"],
+  ["repost", "Reposts"],
+  ["reply", "Replies"],
+  ["follow", "Follows"],
+  ["unfollow", "Unfollows"],
+  ["persuasion", "Persuaded"],
+  ["backlash", "Backlash"],
+  ["neutralShift", "Neutral shift"],
+] as const;
 
 export default function Dashboard({ view }: { view: RoomView }) {
-  const { leaderboard, top, room, stats } = view;
-  return (
-    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
-      <section>
-        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">Leaderboard (human posts)</h2>
-        {leaderboard.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-slate-300 p-6 text-center text-slate-400">No posts yet</p>
-        ) : (
-          <ol className="space-y-2">
-            {leaderboard.map((p, i) => (
-              <li key={p.id} className={`flex items-start gap-3 rounded-xl border bg-white p-3 shadow-sm ${i === 0 ? "border-amber-300" : "border-slate-200"}`}>
-                <span className={`w-6 text-center text-lg font-bold ${i === 0 ? "text-amber-500" : "text-slate-400"}`}>{i + 1}</span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2 text-sm">
-                    <span className="font-semibold">{p.nickname}</span>
-                    <SideBadge side={p.side} />
-                    {!p.finalized && <span className="text-xs text-sky-600">live</span>}
-                  </div>
-                  <p className="truncate text-sm text-slate-600">{p.text}</p>
-                  <Counts post={p} />
-                </div>
-                <span className="text-lg font-bold tabular-nums">{p.points}</span>
-              </li>
-            ))}
-          </ol>
-        )}
-        <div className="mt-4 grid grid-cols-4 gap-2 text-center">
-          {[
-            ["agents", stats.agents],
-            ["people", stats.members],
-            ["posts", stats.posts],
-            ["reactions", stats.events],
-          ].map(([k, v]) => (
-            <div key={k} className="rounded-lg bg-white p-2 shadow-sm">
-              <div className="text-lg font-bold tabular-nums">{v}</div>
-              <div className="text-xs text-slate-500">{k}</div>
-            </div>
-          ))}
-        </div>
-      </section>
+  const { leaderboard, room, stats } = view;
+  const [open, setOpen] = useState<string | null>(null);
 
-      <section>
-        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">Most viral post</h2>
-        {top ? (
-          <div className="space-y-3">
-            <PostCard post={top.post} roundsToFinal={room.roundsToFinal} highlight />
-            <SpreadGraph roomId={room.id} postId={top.post.id} version={room.round} />
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="rounded-xl border border-slate-200 bg-white p-3">
-                <h3 className="mb-2 text-sm font-semibold">Top replies</h3>
-                {top.replies.length === 0 && <p className="text-sm text-slate-400">None yet</p>}
-                <ul className="space-y-2">
-                  {top.replies.map((r) => (
-                    <li key={r.id} className="text-sm">
-                      <span className="font-medium">@{r.handle}</span> <span className="text-xs text-slate-400">{r.role}</span>
-                      <p className="text-slate-700">{r.text}</p>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-              <div className="rounded-xl border border-slate-200 bg-white p-3">
-                <h3 className="mb-2 text-sm font-semibold">Changed their mind</h3>
-                {top.persuaded.length === 0 && <p className="text-sm text-slate-400">Nobody yet</p>}
-                <ul className="space-y-1">
-                  {top.persuaded.map((e) => (
-                    <li key={e.id} className="text-sm">
-                      <span className="font-medium">@{e.handle}</span> <span className="text-xs text-slate-400">{e.role}</span>
-                      <span className="ml-1 tabular-nums text-emerald-700">{e.stanceBefore} → {e.stanceAfter}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </div>
+  return (
+    <div className="space-y-4 p-4">
+      <div className="grid grid-cols-4 overflow-hidden rounded-2xl border border-line text-center">
+        {[
+          ["agents", stats.agents],
+          ["people", stats.members],
+          ["posts", stats.posts],
+          ["reactions", stats.reactions],
+        ].map(([k, v], i) => (
+          <div key={k} className={`py-3 ${i ? "border-l border-line" : ""}`}>
+            <div className="text-xl font-extrabold tabular-nums">{compact(Number(v))}</div>
+            <div className="text-[13px] text-muted">{k}</div>
           </div>
-        ) : (
-          <p className="rounded-xl border border-dashed border-slate-300 p-6 text-center text-slate-400">Waiting for the first post</p>
-        )}
+        ))}
+      </div>
+
+      <section className="overflow-hidden rounded-2xl border border-line">
+        <h2 className="px-4 pt-3 pb-2 text-xl font-extrabold">Leaderboard</h2>
+        {leaderboard.length === 0 && <p className="px-4 pb-6 text-muted">No posts yet</p>}
+        <ol>
+          {leaderboard.map((p, i) => {
+            const expanded = open === p.id;
+            const c = p.counts;
+            const reactions = c.like + c.repost + c.reply + c.follow + c.unfollow;
+            return (
+              <li key={p.id} className="border-t border-line">
+                <button
+                  onClick={() => setOpen(expanded ? null : p.id)}
+                  className="flex w-full items-start gap-3 px-4 py-3 text-left transition hover:bg-white/[0.03]"
+                >
+                  <span className={`w-5 pt-2 text-center text-[15px] font-bold ${i === 0 ? "text-accent" : "text-muted"}`}>{i + 1}</span>
+                  <Avatar name={p.nickname} me={p.handle === view.me?.handle} size={36} />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-1.5 text-[15px]">
+                      <span className="font-bold">{p.nickname}</span>
+                      <SideBadge side={p.side} />
+                      {!p.finalized && <span className="text-xs font-bold text-repost">● live</span>}
+                    </div>
+                    <p className={`text-sm ${expanded ? "mt-1 whitespace-pre-wrap break-words text-ink" : "truncate text-muted"}`}>{p.text}</p>
+                  </div>
+                  <span className="pt-1.5 text-lg font-extrabold tabular-nums">{p.points}</span>
+                  <span className={`pt-2 text-muted transition ${expanded ? "rotate-180" : ""}`}>▾</span>
+                </button>
+
+                {expanded && (
+                  <div className="px-4 pb-4 pl-[4.75rem]">
+                    <div className="mb-3 flex flex-wrap items-center gap-4 text-[13px] text-muted">
+                      <Progress post={p} roundsToFinal={room.roundsToFinal} />
+                      <span>{compact(c.impressions)} views</span>
+                      <span>{c.impressions ? ((reactions / c.impressions) * 100).toFixed(1) : "0.0"}% reaction rate</span>
+                    </div>
+                    <table className="w-full text-sm">
+                      <thead className="text-[13px] text-muted">
+                        <tr>
+                          <th className="text-left font-normal">Engagement</th>
+                          <th className="text-right font-normal">Count</th>
+                          <th className="text-right font-normal">Points</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {ROWS.map(([key, label]) => {
+                          const pts = c[key] * room.points[key];
+                          return (
+                            <tr key={key} className={`border-t border-line ${c[key] ? "" : "text-muted"}`}>
+                              <td className="py-1.5">
+                                {label} <span className="text-[12px] text-muted">({room.points[key] > 0 ? "+" : ""}{room.points[key]})</span>
+                              </td>
+                              <td className="text-right tabular-nums">{c[key]}</td>
+                              <td className={`text-right font-bold tabular-nums ${pts > 0 ? "text-repost" : pts < 0 ? "text-like" : ""}`}>{pts}</td>
+                            </tr>
+                          );
+                        })}
+                        <tr className="border-t border-line font-extrabold">
+                          <td className="py-1.5">Total</td>
+                          <td />
+                          <td className="text-right tabular-nums text-accent">{p.points}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </li>
+            );
+          })}
+        </ol>
       </section>
     </div>
   );
