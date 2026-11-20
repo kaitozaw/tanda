@@ -70,12 +70,13 @@ Event   { id, round, agentId, type: "like" | "repost" | "reply" | "follow" | "un
           "persuasion" | "backlash" | "neutralShift", postId, text?, stanceBefore?, stanceAfter? }
 ```
 - `agents.json` (1,000 personas) is generated once before the demo and loaded at startup.
+- `rooms/<roomId>/posts.json` holds the room's starter posts (`{ side, text }`; 20 for `au-u16-ban`). They are added on a fresh seed and on reset, so the timeline is not empty before anyone posts. A room without the file starts empty.
 - `events` is the engagement log. Points, notifications and feedback are all computed from it.
 
 ## Logic
 | Module | Job |
 |---|---|
-| `seed` | Load `agents.json`. Build a power-law follow graph between agents. Give each new member 100 random agent followers. |
+| `seed` | Load `agents.json`. Build a power-law follow graph between agents. Add the room's starter posts, each by a different active agent whose stance matches the post's side. Give each new member 100 random agent followers. |
 | `roundEngine` | Every 15s: skip if the previous round is still running, then run the steps below and increment `round`. Runs only while some human post is not final yet: starts on a member's post, stops when the last one is final (saves API budget). Stops for the day at a daily request cap (config). |
 | `feedBuilder` | Build each agent's 12-post feed (follows / exploration / `rank`). Drop posts older than 4 rounds. |
 | `sessionRunner` | One Haiku request per agent. Shared rules and tools first (prompt cache), then persona, stance and feed. Post text is wrapped as data. 10s timeout. |
