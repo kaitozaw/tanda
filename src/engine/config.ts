@@ -1,6 +1,6 @@
 import { hasLlmKey, usingOpenRouter } from "./llm";
 import { OPEN_MARKET } from "./markets";
-import type { AgentType, EngagementType, PowerType, Tier } from "./types";
+import type { Segment, EngagementType, PowerSegment, Tier } from "./types";
 
 const num = (v: string | undefined, d: number) => (v && !Number.isNaN(Number(v)) ? Number(v) : d);
 
@@ -40,7 +40,7 @@ export const rules = {
   maxPostChars: 280,
   postCooldownMs: 5000, // per member, so one person cannot flood the room
   /** Agents per type at 1,000 agents. Customers get the rest. */
-  mix: { investor: 40, industry_lead: 30, regulator: 20, media: 30 } satisfies Record<PowerType, number>,
+  mix: { investor: 40, industry_lead: 30, regulator: 20, media: 30 } satisfies Record<PowerSegment, number>,
   /** Engagement points by the acting agent's tier. */
   points: {
     like: both(2),
@@ -71,6 +71,6 @@ export const rules = {
       intent: { means: "you would write about it or feature it", points: 60 },
       objection: { means: "why you would not cover it" },
     },
-  } satisfies Record<AgentType, { intent: { means: string; points: number }; objection: { means: string } }>,
+  } satisfies Record<Segment, { intent: { means: string; points: number }; objection: { means: string } }>,
   rankWeights: { like: 1, repost: 3, reply: 6 },
 };

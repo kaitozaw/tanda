@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import type { Agent, AgentType, Member } from "./types";
+import type { Agent, Segment, Member } from "./types";
 import { Store, emptyCounts } from "./store";
 import { rules } from "./config";
 
@@ -61,8 +61,8 @@ export function connectAgents(agents: Agent[], seed = 7) {
   const crowd = agents.filter((a) => a.persona.tier === "crowd").sort(() => rand() - 0.5);
   buildFollowGraph([...power, ...crowd]);
   for (const a of power) {
-    if (a.persona.type === "media") for (const b of power) follow(a, b);
-    if (a.persona.type === "investor") for (const b of power) if (b.persona.type === "industry_lead") follow(a, b);
+    if (a.persona.segment === "media") for (const b of power) follow(a, b);
+    if (a.persona.segment === "investor") for (const b of power) if (b.persona.segment === "industry_lead") follow(a, b);
   }
 }
 
@@ -79,7 +79,7 @@ export function seedAgents(store: Store, seeds = loadAgentSeeds(store.room.id)) 
   for (const a of agents) store.agents.set(a.id, a);
 }
 
-type PostSeed = { type: AgentType; text: string };
+type PostSeed = { segment: Segment; text: string };
 
 /** Starter posts for a room, from data/rooms/<roomId>/posts.json. No file = no starter posts. */
 export function loadPostSeeds(roomId: string, dir = path.resolve("data/rooms")): PostSeed[] {
@@ -90,7 +90,7 @@ export function loadPostSeeds(roomId: string, dir = path.resolve("data/rooms")):
 
 /**
  * Put the room's starter posts on the timeline, so it is not empty before anyone pitches. Each one
- * gets an active agent of the post's type (deterministic, one post per agent), and they are spaced
+ * gets an active agent of the post's segment (deterministic, one post per agent), and they are spaced
  * a few minutes apart, oldest first.
  */
 export function seedPosts(store: Store, seeds = loadPostSeeds(store.room.id), now = Date.now()) {
@@ -98,7 +98,7 @@ export function seedPosts(store: Store, seeds = loadPostSeeds(store.room.id), no
   const used = new Set<string>();
   const agents = store.activeAgents();
   seeds.forEach((s, i) => {
-    const pool = agents.filter((a) => a.persona.type === s.type && !used.has(a.id));
+    const pool = agents.filter((a) => a.persona.segment === s.segment && !used.has(a.id));
     if (pool.length === 0) return;
     const author = pool[Math.floor(rand() * pool.length)];
     used.add(author.id);

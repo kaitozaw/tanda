@@ -15,7 +15,7 @@ import { config, rules } from "../src/engine/config";
 import { getMarket } from "../src/engine/markets";
 import { z } from "zod";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
-import { POWER_TYPES, type AgentType, type Persona, type PowerType } from "../src/engine/types";
+import { POWER_SEGMENTS, type Segment, type Persona, type PowerSegment } from "../src/engine/types";
 
 const COUNT = 1000;
 const arg = (name: string) => {
@@ -70,7 +70,7 @@ interface MarketTables {
   first: string[];
   last: string[];
   groups: Group[];
-  archetypes: Record<PowerType, Archetype[]>;
+  archetypes: Record<PowerSegment, Archetype[]>;
 }
 
 const AU: MarketTables = {
@@ -178,13 +178,13 @@ const TABLES: Record<string, MarketTables> = { au: AU };
 // ---------------------------------------------------------------------------------------------
 
 type Draft = Omit<Persona, "bio"> & { id: string; handle: string };
-const HANDLE_TAG: Record<AgentType, string> = { customer: "", investor: "vc", industry_lead: "exec", regulator: "gov", media: "news" };
+const HANDLE_TAG: Record<Segment, string> = { customer: "", investor: "vc", industry_lead: "exec", regulator: "gov", media: "news" };
 
 /** Agents per type for `count` agents: the PRODUCT.md mix scaled. */
-function mixCounts(count: number): Record<AgentType, number> {
-  const out = { customer: 0 } as Record<AgentType, number>;
+function mixCounts(count: number): Record<Segment, number> {
+  const out = { customer: 0 } as Record<Segment, number>;
   let power = 0;
-  for (const t of POWER_TYPES) {
+  for (const t of POWER_SEGMENTS) {
     out[t] = Math.round((rules.mix[t] * count) / 1000);
     power += out[t];
   }
@@ -195,28 +195,28 @@ function mixCounts(count: number): Record<AgentType, number> {
 function drafts(marketId: string, t: MarketTables): Draft[] {
   const counts = mixCounts(COUNT);
   const out: (Omit<Draft, "id" | "handle"> & { key: number })[] = [];
-  const push = (type: AgentType, group: string, role: string, priorities: string[], ages: [number, number], tr: Traits, k: number, n: number) =>
+  const push = (segment: Segment, group: string, role: string, priorities: string[], ages: [number, number], tr: Traits, k: number, n: number) =>
     out.push({
       market: marketId,
       name: `${pick(t.first)} ${pick(t.last)}`,
       age: Math.round(ages[0] + rand() * (ages[1] - ages[0])),
       region: weighted(t.regions),
-      tier: type === "customer" ? "crowd" : "power",
-      type,
+      tier: segment === "customer" ? "crowd" : "power",
+      segment,
       role,
       group,
       priorities,
       adoption: trait(tr.adoption),
       priceSensitivity: trait(tr.price),
       scepticism: trait(tr.scepticism, 0.1),
-      activity: type === "customer" ? trait(0.45, 0.2) : trait(0.5, 0.15),
-      openness: type === "customer" ? trait(tr.scepticism > 0.8 ? 0.2 : 0.45, 0.15) : trait(0.35, 0.1),
+      activity: segment === "customer" ? trait(0.45, 0.2) : trait(0.5, 0.15),
+      openness: segment === "customer" ? trait(tr.scepticism > 0.8 ? 0.2 : 0.45, 0.15) : trait(0.35, 0.1),
       // Sort key so any prefix of the file keeps the mix (AGENT_COUNT takes a prefix): stratified
       // per power type, random for customers (so every group is spread through the file).
-      key: type === "customer" ? rand() : (k + rand()) / n,
+      key: segment === "customer" ? rand() : (k + rand()) / n,
     });
 
-  for (const type of POWER_TYPES) {
+  for (const type of POWER_SEGMENTS) {
     const n = counts[type];
     for (let k = 0; k < n; k++) {
       const a = t.archetypes[type][k % t.archetypes[type].length];
@@ -237,7 +237,7 @@ function drafts(marketId: string, t: MarketTables): Draft[] {
     .map(({ key: _key, ...p }, i) => {
       const [first, last] = p.name.split(" ");
       const slug = (first + last).toLowerCase().replace(/[^a-z]/g, "").slice(0, 12);
-      const handle = p.type === "customer" ? `${slug}_${i}` : `${HANDLE_TAG[p.type]}_${first.toLowerCase().replace(/[^a-z]/g, "")}${i}`;
+      const handle = p.segment === "customer" ? `${slug}_${i}` : `${HANDLE_TAG[p.segment]}_${first.toLowerCase().replace(/[^a-z]/g, "")}${i}`;
       return { ...p, id: `a${String(i).padStart(4, "0")}`, handle };
     });
 }
@@ -317,7 +317,7 @@ async function main() {
   fs.mkdirSync(path.dirname(out), { recursive: true });
   fs.writeFileSync(out, JSON.stringify(agents, null, 1));
   const counts = new Map<string, number>();
-  for (const a of agents) counts.set(a.persona.type, (counts.get(a.persona.type) ?? 0) + 1);
+  for (const a of agents) counts.set(a.persona.segment, (counts.get(a.persona.segment) ?? 0) + 1);
   const byType = [...counts].map(([t, n]) => `${t} ${n}`).join(", ");
   console.log(`wrote ${agents.length} agents to ${out} (${byType}; llm bios: ${bios.size})`);
 }

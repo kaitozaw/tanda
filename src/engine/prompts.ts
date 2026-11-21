@@ -66,7 +66,7 @@ export const TOOLS: Anthropic.Tool[] = [
 ];
 
 const level = (x: number, low: string, mid: string, high: string) => (x < 0.33 ? low : x < 0.66 ? mid : high);
-const TYPE_LABEL = { customer: "potential customer", investor: "investor", industry_lead: "industry leader", regulator: "regulator / government official", media: "journalist or creator" };
+const SEGMENT_LABEL = { customer: "potential customer", investor: "investor", industry_lead: "industry leader", regulator: "regulator / government official", media: "journalist or creator" };
 
 /** Layer 3: persona, allowed signals and feed. */
 export function userMessage(store: Store, agent: Agent, feed: FeedItem[], mayPost: boolean): string {
@@ -79,9 +79,9 @@ export function userMessage(store: Store, agent: Agent, feed: FeedItem[], mayPos
     const c = post.counts;
     return `<post id="${post.id}" author="@${author.handle}"${author.role ? ` author_role="${esc(author.role)}"` : ""} you_follow="${following.has(post.authorId) ? "yes" : "no"}"${via}${pitch} likes="${c.like}" reposts="${c.repost}" replies="${c.reply}">${esc(post.text)}</post>`;
   });
-  const sig = rules.signals[p.type];
+  const sig = rules.signals[p.segment];
   return `<you>
-${p.name} (@${agent.handle}), ${p.age}, ${p.role}, ${p.region}. You are a ${TYPE_LABEL[p.type]} (${p.group}).
+${p.name} (@${agent.handle}), ${p.age}, ${p.role}, ${p.region}. You are a ${SEGMENT_LABEL[p.segment]} (${p.group}).
 What is on your mind: ${p.priorities.join("; ")}.
 Bio: ${p.bio}
 Activity: ${level(p.activity, "you mostly lurk: usually 0-2 likes and rarely anything else", "a typical scroll is 1-4 likes, maybe a reply or a repost", "you are very active: several likes, a couple of replies or reposts, and you follow people freely")}.
