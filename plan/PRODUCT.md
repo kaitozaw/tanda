@@ -79,6 +79,7 @@ This makes opinion spread: when an industry lead reposts or pushes back, hundred
      | media | `would_cover` |
      | any | `objection` |
 
+   - In `decision` rooms (a policy, a pivot, a pricing change), customers are the people affected. The prompt reads `would_try` as "would back it" and `would_pay` as "would act on it" (sign up, vote, comply, campaign). The audience plan's archetypes follow the decision too, e.g. safety-tech investors rather than SaaS angels.
    - `end_session(stance_after, influenced_by[])`: required once, at the end.
    - Rules: max 3 replies and max 2 signals per session. Calling only `end_session` means the agent scrolled past.
 4. Record tool calls, update counts, stance and scores.
