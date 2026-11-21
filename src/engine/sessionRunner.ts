@@ -1,10 +1,10 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import { createClient } from "./llm";
-import pLimit from "p-limit";
-import type { Agent, FeedItem, SessionResult } from "./types";
+import { SIGNAL_KINDS, type Agent, type FeedItem, type SessionResult, type SignalKind } from "./types";
 import type { Store } from "./store";
-import { config } from "./config";
-import { SYSTEM_PROMPT, TOOLS, userMessage } from "./prompts";
+import { config, rules } from "./config";
+import { llmLimit } from "./limiter";
+import { SYSTEM_PROMPT, TOOLS, roomContext, userMessage } from "./prompts";
 
 export interface SessionInput {
   agent: Agent;
@@ -30,6 +30,7 @@ const emptyResult = (agentId: string): SessionResult => ({
   replies: [],
   follows: [],
   unfollows: [],
+  signals: [],
   post: null,
   end: null,
 });
@@ -52,6 +53,12 @@ export function parseToolCalls(agentId: string, blocks: Anthropic.ContentBlock[]
       case "follow": if (id) r.follows.push(id); break;
       case "unfollow": if (id) r.unfollows.push(id); break;
       case "post": if (text) r.post = text; break;
+      case "signal": {
+        const kind = input.kind as SignalKind;
+        const reason = typeof input.reason === "string" ? input.reason.trim() : "";
+        if (id && SIGNAL_KINDS.includes(kind)) r.signals.push({ postId: id, kind, reason });
+        break;
+      }
       case "end_session":
         if (!r.end && typeof input.stance_after === "number") {
           r.end = {
@@ -71,7 +78,11 @@ async function runReal(store: Store, s: SessionInput, stats: RunStats): Promise<
       model: config.agentModel,
       max_tokens: 800,
       thinking: { type: "disabled" },
-      system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
+      // Shared rules (all rooms), then the idea card (this room), then the agent: two cache breakpoints.
+      system: [
+        { type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } },
+        { type: "text", text: roomContext(store.room), cache_control: { type: "ephemeral" } },
+      ],
       tools: TOOLS,
       messages: [{ role: "user", content: userMessage(store, s.agent, s.feed, s.mayPost) }],
     },
@@ -86,24 +97,34 @@ async function runReal(store: Store, s: SessionInput, stats: RunStats): Promise<
 
 // ---------- FAKE_LLM: random but stance-biased behaviour, no API calls (free UI checks) ----------
 
-const sideStance = { for: 85, against: 15, neutral: 50 } as const;
-
 export function runFake(s: SessionInput, rand = Math.random): SessionResult {
   const r = emptyResult(s.agent.id);
+  const p0 = s.agent.persona;
+  const allowed = rules.signals[p0.type];
   for (const { post } of s.feed) {
-    const p = s.agent.persona.activity * 0.3 * (1 - Math.abs(s.agent.stance - sideStance[post.side]) / 100);
+    const pitch = post.authorType === "member";
+    // Supporters engage with pitches more; sceptics less.
+    const p = p0.activity * 0.3 * (pitch ? (0.4 + s.agent.stance / 100) * (1.2 - p0.scepticism) : 0.6);
     if (rand() < p) r.likes.push(post.id);
     if (rand() < p * 0.2) r.reposts.push(post.id);
     if (rand() < p * 0.15) r.replies.push({ postId: post.id, text: "(fake reply)" });
     if (rand() < p * 0.05) r.follows.push(post.id);
+    if (pitch && r.signals.length < rules.maxSignalsPerSession && rand() < 0.12) {
+      const positive = rand() * 100 < s.agent.stance;
+      const kinds = allowed.filter((k) => (positive ? !NEGATIVE.has(k) : NEGATIVE.has(k)));
+      const kind = kinds[Math.floor(rand() * kinds.length)] ?? "objection";
+      r.signals.push({ postId: post.id, kind, reason: `(fake ${kind.replace("_", " ")})` });
+    }
   }
-  const target = s.feed[0]?.post;
-  const moved = target && rand() < s.agent.persona.openness * 0.1;
-  const shift = moved ? (target.side === "against" ? -8 : 8) : 0;
+  const target = s.feed.find((f) => f.post.authorType === "member")?.post;
+  const moved = target && rand() < p0.openness * 0.15;
+  const shift = moved ? (rand() < 0.75 ? 8 : -8) : 0;
   if (s.mayPost) r.post = `(fake post by @${s.agent.handle})`;
   r.end = { stanceAfter: Math.max(0, Math.min(100, s.agent.stance + shift)), influencedBy: moved ? [target.id] : [] };
   return r;
 }
+
+const NEGATIVE = new Set<SignalKind>(["pass", "compete", "concern", "objection"]);
 
 // ---------- runner ----------
 
@@ -113,10 +134,9 @@ export async function runSessions(store: Store, sessions: SessionInput[]): Promi
     stats.ok = sessions.length;
     return { results: sessions.map((s) => runFake(s)), stats };
   }
-  const limit = pLimit(config.concurrency);
   const results = await Promise.all(
     sessions.map((s) =>
-      limit(async () => {
+      llmLimit(async () => {
         try {
           const r = await runReal(store, s, stats);
           stats.ok++;

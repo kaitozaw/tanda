@@ -6,8 +6,8 @@ import { makeAgent, makePost } from "./helpers";
 describe("rank", () => {
   it("rises with engagement and decays with simulated age", () => {
     const a = makePost("a", "m1");
-    const b = makePost("b", "m1", "for", { counts: { ...a.counts, reply: 3 } });
-    const old = makePost("c", "m1", "for", { counts: { ...a.counts, reply: 3 }, roundsSeen: 3 });
+    const b = makePost("b", "m1", { counts: { ...a.counts, reply: 3 } });
+    const old = makePost("c", "m1", { counts: { ...a.counts, reply: 3 }, roundsSeen: 3 });
     expect(rank(b)).toBeGreaterThan(rank(a));
     expect(rank(b)).toBeGreaterThan(rank(old));
   });
@@ -16,11 +16,11 @@ describe("rank", () => {
 describe("buildFeed", () => {
   it("fills follow, recommended and exploration slots without own posts or duplicates", () => {
     const me = makeAgent("me", 50, { followingIds: ["f1"] });
-    const followed = Array.from({ length: 8 }, (_, i) => makePost(`f${i}`, "f1", "for", { roundsSeen: 1 }));
-    const reposted = makePost("r1", "x", "for", { roundsSeen: 1 });
-    const others = Array.from({ length: 10 }, (_, i) => makePost(`o${i}`, `u${i}`, "for", { roundsSeen: 1 }));
-    const fresh = Array.from({ length: 5 }, (_, i) => makePost(`n${i}`, `n${i}`, "for"));
-    const own = makePost("own", "me", "for", { authorType: "agent" });
+    const followed = Array.from({ length: 8 }, (_, i) => makePost(`f${i}`, "f1", { roundsSeen: 1 }));
+    const reposted = makePost("r1", "x", { roundsSeen: 1 });
+    const others = Array.from({ length: 10 }, (_, i) => makePost(`o${i}`, `u${i}`, { roundsSeen: 1 }));
+    const fresh = Array.from({ length: 5 }, (_, i) => makePost(`n${i}`, `n${i}`));
+    const own = makePost("own", "me", { authorType: "agent" });
     const pool = [...followed, reposted, ...others, ...fresh, own];
     const ctx = prepare(pool, new Map([["r1", ["f1"]]]), () => 0.3);
     const feed = buildFeed(me, ctx);

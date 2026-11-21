@@ -4,17 +4,20 @@ import Link from "next/link";
 import { useRoom } from "@/lib/useRoom";
 import Composer from "./Composer";
 import Dashboard from "./Dashboard";
-import MyPosts from "./MyPosts";
+import MyPitches from "./MyPitches";
 import Thread from "./Thread";
+import { AudiencePanel, IdeaCard, KIND_LABEL } from "./ui";
 
 type Tab = "timeline" | "dashboard" | "mine";
 
 const STATUS: Record<string, string> = {
   running: "Agents are scrolling",
-  "waiting for posts": "Idle · post to start",
+  queued: "Queued · other rooms are running",
+  "waiting for pitches": "Idle · pitch to start",
+  "building audience": "Building your audience",
+  "audience failed": "Audience build failed",
   paused: "Paused",
   "daily cap reached": "Daily limit reached",
-  starting: "Starting",
 };
 
 export default function RoomApp({ roomId }: { roomId: string }) {
@@ -26,13 +29,17 @@ export default function RoomApp({ roomId }: { roomId: string }) {
   if (r.error) return <main className="p-8 text-center text-muted">{r.error}. <Link className="text-accent hover:underline" href="/">Back</Link></main>;
   if (!r.view) return <main className="p-8 text-center text-muted">Loading…</main>;
   const v = r.view;
+  const building = v.room.buildStatus !== "ready";
 
   if (!r.memberId || !v.me) {
     return (
       <main className="mx-auto max-w-md px-4 py-16">
-        <p className="text-sm text-muted">Room</p>
-        <h1 className="mt-1 text-3xl font-extrabold">{v.room.topic}</h1>
-        <p className="mt-3 text-muted">You are a campaign manager at our agency. Post your message and see how 1,000 people react in one simulated hour.</p>
+        <p className="text-sm text-muted">{KIND_LABEL[v.room.kind]} under test · {v.room.region}</p>
+        <h1 className="mt-1 text-3xl font-extrabold">{v.room.title}</h1>
+        <p className="mt-3 whitespace-pre-wrap text-ink/90">{v.room.description}</p>
+        <p className="mt-4 text-muted">
+          Pitch this {v.room.kind === "decision" ? "decision" : "idea"} to {v.stats.agents.toLocaleString()} AI customers, investors, industry leads, regulators and media. See one simulated hour of reactions in one minute.
+        </p>
         <form
           className="mt-8 space-y-3"
           onSubmit={async (e) => {
@@ -54,19 +61,17 @@ export default function RoomApp({ roomId }: { roomId: string }) {
     );
   }
 
-  const tabs: [Tab, string][] = [["timeline", "Timeline"], ["dashboard", "Dashboard"], ["mine", "My Posts"]];
+  const tabs: [Tab, string][] = [["timeline", "Timeline"], ["dashboard", "Dashboard"], ["mine", "My Pitches"]];
 
   return (
     <main className="mx-auto min-h-screen max-w-[600px] border-x border-line pb-24">
       <header className="sticky top-0 z-10 border-b border-line bg-bg/80 backdrop-blur-md">
         <div className="px-4 pt-3 pb-1">
-          <div className="flex items-center gap-2">
-            <Link href="/" className="text-sm font-bold text-accent">Capture the Narrative</Link>
-          </div>
-          <h1 className="truncate text-xl font-bold">{v.room.topic}</h1>
+          <Link href="/" className="text-sm font-bold text-accent">Capture the Narrative</Link>
+          <h1 className="truncate text-xl font-bold">{v.room.title}</h1>
           <p className="text-[13px] text-muted">
-            <span className={`mr-1.5 inline-block h-2 w-2 rounded-full ${v.room.status === "running" ? "animate-pulse bg-repost" : "bg-muted"}`} />
-            {STATUS[v.room.status] ?? v.room.status} · @{v.me.handle} · {v.me.followers} followers
+            <span className={`mr-1.5 inline-block h-2 w-2 rounded-full ${v.room.status === "running" || building ? "animate-pulse bg-repost" : "bg-muted"}`} />
+            {STATUS[v.room.status] ?? v.room.status} · @{v.me.handle}{v.me.followers ? ` · ${v.me.followers} followers` : ""}
           </p>
         </div>
         <nav className="flex">
@@ -90,14 +95,16 @@ export default function RoomApp({ roomId }: { roomId: string }) {
 
       {tab === "timeline" && (
         <>
-          <Composer name={v.me.nickname} onPost={r.post} />
+          <IdeaCard room={v.room} />
+          {building && <div className="border-b border-line p-4"><AudiencePanel view={v} /></div>}
+          <Composer name={v.me.nickname} disabled={building ? "Pitching opens once your audience is ready…" : null} onPost={r.post} />
           {v.timeline.map((p) => (
-            <Thread key={p.id} roomId={roomId} round={v.room.round} post={p} roundsToFinal={v.room.roundsToFinal} mine={p.authorType === "member" && p.handle === v.me!.handle} />
+            <Thread key={p.id} roomId={roomId} round={v.room.round} post={p} room={v.room} mine={p.isPitch && p.handle === v.me!.handle} />
           ))}
         </>
       )}
       {tab === "dashboard" && <Dashboard view={v} />}
-      {tab === "mine" && <MyPosts view={v} />}
+      {tab === "mine" && <MyPitches view={v} />}
 
       <div className="fixed inset-x-0 bottom-6 z-20 flex flex-col items-center gap-2 px-4">
         {r.toasts.map((t) => (

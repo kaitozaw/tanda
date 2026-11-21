@@ -45,8 +45,11 @@ export function notifyMembers(notifications: Notification[]) {
     byMember.set(n.memberId, list);
   }
   for (const [memberId, list] of byMember) {
-    // Replies and persuasion first: they are the interesting ones.
-    const order = ["persuasion", "reply", "repost", "follow", "backlash", "unfollow", "neutralShift", "like"];
+    // Power-holder signals and persuasion first: they are the interesting ones. Likes last.
+    const order = [
+      "want_meeting", "partner", "would_cover", "concern", "support", "would_pay", "persuasion", "backlash",
+      "objection", "would_try", "compete", "pass", "reply", "repost", "follow", "unfollow", "like",
+    ];
     list.sort((a, b) => order.indexOf(a.type) - order.indexOf(b.type));
     io()?.to(memberChannel(memberId)).emit("notify", { items: list.slice(0, 4), total: list.length });
   }

@@ -55,9 +55,9 @@ Replaces `data/agents.json`, which was 1,000 fixed personas loaded at startup. `
 
 | Step | How | Failure handling |
 |---|---|---|
-| **1. Plan** | One Sonnet request with a single forced tool (`audience_plan`, strict JSON schema) from the room's title, kind, description, region and `targetHint`. | Validate in code: segment shares sum to 100, a sceptics segment exists, every power type has ≥3 archetypes, ranges are within 0–100 / 0–1. Retry once. If it fails again, use `DEFAULT_PLAN` (generic segments; no LLM). |
+| **1. Plan** | One Sonnet request with structured output (zod schema) from the room's title, kind, description, region and `targetHint`. | `normalisePlan` repairs rather than rejects: clamps ranges to 0–100 / 0–1, makes shares sum to 100 with sceptics ≥10% (adding a sceptic segment if missing), and fills any empty power type from `DEFAULT_PLAN`. A failed request is retried once, then `DEFAULT_PLAN` (generic segments; no LLM) is used. |
 | **2. Instantiate** | Code only. Counts per type and segment come from the PRODUCT.md mix × the plan's shares. Names, handles, ages and regions come from local lists. `stance`, `scepticism`, `openness` and `activity` are drawn from the plan's ranges. RNG is seeded from the room id, so a rebuild is reproducible. | — |
-| **3. Bios** | Haiku, 50 agents per request, 20 requests in parallel. Each returns `{ id, bio }[]`. | Any batch that fails or times out gets template bios: `"{role}. Cares about {priorities}."` |
+| **3. Bios** | Haiku with structured output, 50 agents per request, all batches in parallel. Each returns `{ id, bio }[]`. | Any batch that fails or times out gets template bios: `"{role}. Cares about {priorities}."` |
 | **4. Follow graph** | `buildFollowGraph` (existing, preferential attachment) with power accounts placed first so they collect the most followers. Then the PRODUCT.md extras: media follow the power tier, investors follow industry leads. | — |
 
 Each step's result is saved on the room so the UI can show progress and a restart resumes from the last finished step. Cost per room: 1 Sonnet + 20 Haiku requests.
@@ -72,7 +72,7 @@ The prompt has three layers, ordered so the shared parts can be cached:
 
 Pitches are marked `<post … pitch="yes">` in the feed and point to the idea card in layer 2. That avoids repeating the description in every post.
 
-Tools: the existing `like`, `repost`, `reply`, `follow`, `unfollow`, `post` and `end_session`, plus `signal(post_id, kind, reason)`, where `kind` is an enum of all nine kinds. The schema stays identical across agents so it stays cacheable. The allowed kinds for this agent are listed in the user message and enforced in `applyEvents`.
+Tools: the existing `like`, `repost`, `reply`, `follow`, `unfollow`, `post` and `end_session`, plus `signal(post_id, kind, reason)`, where `kind` is an enum of all ten kinds. The schema stays identical across agents so it stays cacheable. The allowed kinds for this agent are listed in the user message and enforced in `applyEvents`.
 
 ## Data (Postgres, cached in memory)
 One `jsonb` snapshot per room (shapes live in `src/engine/types.ts`).
@@ -94,7 +94,7 @@ Event   { id, round, agentId, type: EngagementType | SignalKind | "persuasion" |
 ```
 - `Side` and `neutralShift` are removed. Every pitch is trying to raise support for the idea.
 - `seenBy` is kept for pitches only. The scorecard needs to know *which* agents saw a pitch (e.g. "target-segment customers who saw it"), and storing that for every agent post would be wasteful.
-- The daily request counter moves from `Room` to a process-wide counter, since the cap is shared.
+- The daily request counter moves from `Room` to a process-wide counter (memory only), since the cap is shared.
 - `events` is still the engagement log. Points, scorecard, notifications and feedback are all computed from it.
 
 ## Logic
@@ -135,7 +135,7 @@ Every scorecard and report shows the label "Simulated audience. Use it to decide
 - **Agent load per active room:** about 750 Haiku requests per round (online share of 1,000), independent of how many people post. Load grows with **active rooms**, not with people.
 - **`MAX_ACTIVE_ROOMS`** (default 3): at most this many rooms run rounds at once. Other rooms with pending pitches wait their turn, and the UI says "queued". Three active rooms means about 2,250 requests per 15s (about 9,000 per minute). Check the org rate limit before the event and lower `AGENT_COUNT` or `MAX_ACTIVE_ROOMS` if needed.
 - **`MAX_ROOMS`** (default 20): total rooms kept, to bound memory and snapshot size (about 1MB per room with bios and graph).
-- **Room creation:** 1 Sonnet + 20 Haiku requests per room. It runs through the same limiter, ahead of sessions so a new room becomes ready quickly.
+- **Room creation:** 1 Sonnet + 20 Haiku requests per room, through the same limiter as sessions.
 - **Refresh fan-out:** unchanged. At most one `refresh` per room per `REFRESH_MS` (1s), with client jitter and one GET at a time.
 - **Feedback:** 30 Sonnet requests in parallel (`FEEDBACK_CONCURRENCY`), so pitches posted together have reports within a minute of finalizing.
 - **Failures:** failed sessions count as "no action" without retry. `/admin` → `lastRound` per room splits `failed` into `rateLimited` and `timedOut`. A warning is logged above 5%.
@@ -148,7 +148,7 @@ No API key needed. The plan comes from `DEFAULT_PLAN`, bios from the template, s
 ## Tech stack
 - TypeScript, Next.js with a custom server (`server.ts`). UI, API, Socket.IO and engine run in one process.
 - Tailwind for UI.
-- `@anthropic-ai/sdk`. Agents and bios: `claude-haiku-5-5`, thinking off. Audience plan and feedback: `claude-sonnet-5-5`. Structured output through forced, strict tools.
-- `p-limit`: one shared limiter for all Claude calls.
+- `@anthropic-ai/sdk`. Agents and bios: `claude-haiku-5-5`, thinking off. Audience plan and feedback: `claude-sonnet-5-5`. Agent actions are strict tools; plan, bios and feedback use structured output (`messages.parse` + zod).
+- `p-limit`: one shared limiter for all Claude calls (`limiter.ts`), plus `FEEDBACK_CONCURRENCY` for reports.
 - Render Postgres via plain `pg`: one `snapshots` table, one `jsonb` row per room.
 - Render web service. `ANTHROPIC_API_KEY` as an env var, never committed.

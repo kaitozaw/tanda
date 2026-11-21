@@ -1,16 +1,20 @@
 import type { Post, SimEvent } from "./types";
-import { sim, type Store } from "./store";
+import type { Room, Store } from "./store";
 import { config, rules } from "./config";
+import { audienceSummary } from "./audience";
+import { computeScorecard } from "./scorecard";
+import { roomStatus } from "./scheduler";
 
 export function postView(store: Store, p: Post) {
   const a = store.author(p);
   return {
     id: p.id,
     authorType: p.authorType,
+    isPitch: p.authorType === "member",
     handle: a.handle,
     name: a.name,
+    role: a.role,
     text: p.text,
-    side: p.side,
     counts: p.counts,
     points: p.points,
     roundsSeen: p.roundsSeen,
@@ -29,6 +33,7 @@ export function eventView(store: Store, e: SimEvent) {
     handle: a?.handle ?? "unknown",
     name: a?.persona.name ?? "",
     role: a?.persona.role ?? "",
+    agentType: a?.persona.type ?? "customer",
     segment: a?.persona.segment ?? "",
     text: e.text,
     stanceBefore: e.stanceBefore,
@@ -37,14 +42,14 @@ export function eventView(store: Store, e: SimEvent) {
 }
 export type EventView = ReturnType<typeof eventView>;
 
-const memberPosts = (store: Store) =>
-  store.postOrder.map((id) => store.posts.get(id)!).filter((p) => p.authorType === "member");
+const SIGNAL_TYPES = new Set(Object.values(rules.signals).flat());
 
-export function roomView(store: Store, memberId: string | null) {
-  const idle = sim.engine?.idleReason() ?? "starting";
+export function roomView({ store, engine }: Room, memberId: string | null) {
+  const r = store.room;
   const timeline = store.postOrder.slice(-80).reverse().map((id) => postView(store, store.posts.get(id)!));
-  const ranked = memberPosts(store).sort((a, b) => b.points - a.points);
-  const leaderboard = ranked.slice(0, 10).map((p) => ({ ...postView(store, p), nickname: store.author(p).name }));
+  const pitches = store.pitches();
+  const withScore = (p: Post) => ({ ...postView(store, p), nickname: store.author(p).name, scorecard: computeScorecard(store, p) });
+  const leaderboard = [...pitches].sort((a, b) => b.points - a.points).slice(0, 20).map(withScore);
 
   const member = memberId ? store.members.get(memberId) : undefined;
   const me = member
@@ -53,12 +58,12 @@ export function roomView(store: Store, memberId: string | null) {
         nickname: member.nickname,
         handle: member.handle,
         followers: member.followerIds.length,
-        posts: memberPosts(store)
+        posts: pitches
           .filter((p) => p.authorId === member.id)
           .reverse()
           .map((p) => ({
-            ...postView(store, p),
-            activity: (store.eventsByPost.get(p.id) ?? []).slice(-40).reverse().map((e) => eventView(store, e)),
+            ...withScore(p),
+            activity: (store.eventsByPost.get(p.id) ?? []).slice(-60).reverse().map((e) => eventView(store, e)),
             feedback: p.feedback,
             feedbackStatus: p.feedbackStatus,
           })),
@@ -67,21 +72,27 @@ export function roomView(store: Store, memberId: string | null) {
 
   return {
     room: {
-      id: store.room.id,
-      topic: store.room.topic,
-      round: store.room.round,
-      status: store.room.running ? "running" : idle ?? "running",
-      lastRoundMs: store.room.lastRoundMs,
+      id: r.id,
+      title: r.title,
+      kind: r.kind,
+      description: r.description,
+      region: r.region,
+      buildStatus: r.status,
+      step: r.step,
+      status: roomStatus({ store, engine }),
+      round: r.round,
+      lastRoundMs: r.lastRoundMs,
       roundsToFinal: rules.roundsToFinal,
       simMinutesPerRound: rules.simMinutesPerRound,
       points: rules.points,
     },
+    audience: audienceSummary(store),
     stats: {
-      agents: Math.min(store.agents.size, config.agentCount),
+      agents: store.agents.size || config.agentCount,
       members: store.members.size,
-      posts: store.posts.size,
-      // Reactions to human posts only (view changes are shown per post in the leaderboard).
-      reactions: memberPosts(store).reduce((n, p) => n + p.counts.like + p.counts.repost + p.counts.reply + p.counts.follow + p.counts.unfollow, 0),
+      pitches: pitches.length,
+      reactions: pitches.reduce((n, p) => n + p.counts.like + p.counts.repost + p.counts.reply + p.counts.follow + p.counts.unfollow, 0),
+      signals: pitches.reduce((n, p) => n + [...SIGNAL_TYPES].reduce((m, k) => m + p.counts[k], 0), 0),
     },
     timeline,
     leaderboard,
@@ -89,3 +100,4 @@ export function roomView(store: Store, memberId: string | null) {
   };
 }
 export type RoomView = ReturnType<typeof roomView>;
+export type PitchView = RoomView["leaderboard"][number];

@@ -1,15 +1,40 @@
-import type { PostView } from "@/engine/views";
+import type { PostView, RoomView } from "@/engine/views";
+import type { AgentType, Scorecard } from "@/engine/types";
 
-export const SIDE_STYLE: Record<string, string> = {
-  for: "border-repost/40 text-repost",
-  against: "border-like/40 text-like",
-  neutral: "border-line text-muted",
+export const TYPE_LABEL: Record<AgentType, string> = {
+  customer: "Customers",
+  investor: "Investors",
+  industry_lead: "Industry",
+  regulator: "Regulators",
+  media: "Media",
 };
-export const SIDE_LABEL: Record<string, string> = { for: "For the ban", against: "Against the ban", neutral: "Neutral" };
+export const KIND_LABEL: Record<string, string> = { product: "Product", feature: "Feature", decision: "Decision" };
 
-export function SideBadge({ side }: { side: string }) {
-  return <span className={`rounded-full border px-2 py-px text-xs ${SIDE_STYLE[side]}`}>{SIDE_LABEL[side]}</span>;
-}
+/** Past-tense verb for the activity log and notifications. */
+export const VERB: Record<string, string> = {
+  like: "liked",
+  repost: "reposted",
+  reply: "replied",
+  follow: "followed you",
+  unfollow: "unfollowed you",
+  would_try: "would try it",
+  would_pay: "would pay for it",
+  want_meeting: "wants a meeting",
+  pass: "passed",
+  partner: "wants to partner",
+  compete: "sees a competitor",
+  support: "supports it",
+  concern: "raised a concern",
+  would_cover: "would cover it",
+  objection: "objected",
+  persuasion: "was persuaded",
+  backlash: "was put off",
+};
+const POSITIVE = new Set(["would_try", "would_pay", "want_meeting", "partner", "support", "would_cover", "persuasion"]);
+const NEGATIVE = new Set(["pass", "concern", "objection", "backlash", "unfollow"]);
+export const tone = (type: string) => (POSITIVE.has(type) ? "text-repost" : NEGATIVE.has(type) ? "text-like" : "text-ink");
+
+export const SIM_LABEL = "Simulated audience. Use it to decide what to test for real.";
 
 export const simLabel = (rounds: number, perRound = 15) => {
   const m = rounds * perRound;
@@ -70,32 +95,160 @@ export function Actions({ post }: { post: PostView }) {
       {item(<IconReply />, c.reply, "hover:text-accent", "replies")}
       {item(<IconRepost />, c.repost, "hover:text-repost", "reposts")}
       {item(<IconLike />, c.like, "hover:text-like", "likes")}
-      {item(<IconPersuade />, c.persuasion, "hover:text-repost", "persuaded")}
+      {post.isPitch && item(<IconPersuade />, c.persuasion, "hover:text-repost", "persuaded")}
       {item(<IconViews />, c.impressions, "hover:text-accent", "views")}
     </div>
   );
 }
 
-export function PostCard({ post, roundsToFinal, mine }: { post: PostView; roundsToFinal: number; mine?: boolean }) {
-  const human = post.authorType === "member";
+type Room = RoomView["room"];
+
+/** The idea under test. `compact` is the link-preview version attached to pitches. */
+export function IdeaCard({ room, compact: small }: { room: Pick<Room, "title" | "kind" | "description" | "region">; compact?: boolean }) {
+  if (small) {
+    return (
+      <div className="mt-2 overflow-hidden rounded-2xl border border-line">
+        <div className="px-3 py-2">
+          <div className="text-[13px] text-muted">{KIND_LABEL[room.kind]} · {room.region}</div>
+          <div className="truncate text-[15px] font-bold">{room.title}</div>
+        </div>
+      </div>
+    );
+  }
   return (
-    <article className={`flex gap-3 border-b border-line px-4 py-3 transition hover:bg-hover`}>
+    <section className="border-b border-line px-4 py-4">
+      <div className="text-[13px] font-bold uppercase tracking-wide text-accent">{KIND_LABEL[room.kind]} under test · {room.region}</div>
+      <h2 className="mt-1 text-xl font-extrabold">{room.title}</h2>
+      <p className="mt-1 whitespace-pre-wrap text-[15px] text-ink/90">{room.description}</p>
+    </section>
+  );
+}
+
+const STEPS = [
+  ["plan", "Planning who is in your market"],
+  ["agents", "Creating the audience"],
+  ["bios", "Giving everyone a voice"],
+] as const;
+
+/** Agents per stakeholder type and segment. While building, also shows the build steps. */
+export function AudiencePanel({ view }: { view: RoomView }) {
+  const { room, audience } = view;
+  const building = room.buildStatus === "generating";
+  const stepIndex = STEPS.findIndex(([s]) => s === room.step);
+  return (
+    <section className="overflow-hidden rounded-2xl border border-line">
+      <h2 className="px-4 pt-3 text-xl font-extrabold">Audience</h2>
+      {building && (
+        <ol className="space-y-1 px-4 pt-2 text-sm">
+          {STEPS.map(([s, label], i) => (
+            <li key={s} className={i < stepIndex ? "text-repost" : i === stepIndex ? "font-bold text-ink" : "text-muted"}>
+              {i < stepIndex ? "✓" : i === stepIndex ? <span className="inline-block animate-pulse">●</span> : "○"} {label}
+            </li>
+          ))}
+        </ol>
+      )}
+      {room.buildStatus === "error" && <p className="px-4 pt-2 text-sm text-like">Building the audience failed. Ask an organiser to reset the room.</p>}
+      {audience.length === 0 ? (
+        <p className="px-4 py-4 text-sm text-muted">Reading your idea…</p>
+      ) : (
+        <div className="grid gap-3 p-4 sm:grid-cols-2">
+          {audience.map((t) => (
+            <div key={t.type} className={t.type === "customer" ? "sm:col-span-2" : ""}>
+              <div className="flex items-baseline justify-between">
+                <span className="font-bold">{TYPE_LABEL[t.type]}</span>
+                <span className="tabular-nums text-muted">{t.count}</span>
+              </div>
+              <ul className="mt-1 space-y-0.5 text-[13px]">
+                {t.segments.map((s) => (
+                  <li key={s.name} className="flex justify-between gap-2">
+                    <span className="truncate text-ink/90">
+                      {s.name}
+                      {s.kind === "sceptic" && <span className="ml-1 text-like">· sceptics</span>}
+                      {s.kind === "adjacent" && <span className="ml-1 text-muted">· adjacent</span>}
+                    </span>
+                    <span className="tabular-nums text-muted">{s.count}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+const pctLabel = (p: { yes: number; seen: number; pct: number }) => (p.seen ? `${p.pct}%` : "–");
+
+/** Headline scorecard numbers, one row (leaderboard) or grid (detail). */
+export function ScoreStats({ s, kind }: { s: Scorecard; kind: string }) {
+  const decision = kind === "decision";
+  const cells: [string, string, string?][] = [
+    ["Reach", compact(s.reach.unique), `${s.reach.viaRepostPct}% via reposts`],
+    [decision ? "Would back it" : "Demand", pctLabel(s.demand), `${s.demand.yes}/${s.demand.seen} target customers`],
+    [decision ? "Would act" : "Would pay", pctLabel(s.pay), `${s.pay.yes}/${s.pay.seen} customers`],
+    ["Investors", `${s.investors.meeting}/${s.investors.pass}`, "meetings / passes"],
+    ["Industry", `${s.industry.partner}/${s.industry.compete}`, "partner / compete"],
+    ["Risk flags", String(s.risk.concerns), "regulator concerns"],
+  ];
+  return (
+    <div className="grid grid-cols-3 gap-px overflow-hidden rounded-xl border border-line bg-line text-center">
+      {cells.map(([label, value, sub]) => (
+        <div key={label} className="bg-bg px-2 py-2">
+          <div className={`text-lg font-extrabold tabular-nums ${label === "Risk flags" && s.risk.concerns ? "text-like" : ""}`}>{value}</div>
+          <div className="text-[12px] font-bold">{label}</div>
+          {sub && <div className="text-[11px] text-muted">{sub}</div>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Seen / positive / negative / support shift per stakeholder type. */
+export function StakeholderTable({ s }: { s: Scorecard }) {
+  return (
+    <table className="w-full text-left text-[13px]">
+      <thead className="text-muted">
+        <tr>
+          <th className="font-normal">Stakeholder</th>
+          <th className="text-right font-normal">Saw it</th>
+          <th className="text-right font-normal">Positive</th>
+          <th className="text-right font-normal">Negative</th>
+          <th className="text-right font-normal">Support</th>
+        </tr>
+      </thead>
+      <tbody>
+        {s.stakeholders.map((r) => (
+          <tr key={r.type} className="border-t border-line">
+            <td className="py-1">{TYPE_LABEL[r.type]}</td>
+            <td className="text-right tabular-nums">{r.seen}</td>
+            <td className="text-right tabular-nums text-repost">{r.positive || ""}</td>
+            <td className="text-right tabular-nums text-like">{r.negative || ""}</td>
+            <td className={`text-right tabular-nums ${r.avgShift > 0 ? "text-repost" : r.avgShift < 0 ? "text-like" : "text-muted"}`}>
+              {r.avgShift > 0 ? "+" : ""}{r.avgShift}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+export function PostCard({ post, roundsToFinal, mine, room }: { post: PostView; roundsToFinal: number; mine?: boolean; room?: Room }) {
+  return (
+    <article className="flex gap-3 border-b border-line px-4 py-3 transition hover:bg-hover">
       <Avatar name={post.name} me={mine} />
       <div className="min-w-0 flex-1">
         <header className="flex flex-wrap items-center gap-x-1.5 text-[15px]">
           <span className="font-bold">{post.name}</span>
-          {human && (
-            <svg viewBox="0 0 24 24" className="h-[18px] w-[18px] text-accent" aria-label="human">
-              <path fill="currentColor" d="M12 2l2.4 2.1 3.2-.3.9 3.1 2.8 1.6-1.2 3 1.2 3-2.8 1.6-.9 3.1-3.2-.3L12 22l-2.4-2.1-3.2.3-.9-3.1-2.8-1.6 1.2-3-1.2-3 2.8-1.6.9-3.1 3.2.3z" />
-              <path d="M8.5 12.5l2.3 2.2 4.7-5" stroke="#000" strokeWidth={2} fill="none" strokeLinecap="round" />
-            </svg>
-          )}
+          {post.isPitch && <span className="rounded-full border border-accent/40 px-2 py-px text-xs text-accent">Pitch</span>}
           <span className="truncate text-muted">@{post.handle}</span>
-          <SideBadge side={post.side} />
+          {post.role && <span className="truncate text-[13px] text-muted">· {post.role}</span>}
         </header>
         <p className="mt-0.5 whitespace-pre-wrap break-words text-[15px] leading-5">{post.text}</p>
+        {post.isPitch && room && <IdeaCard room={room} compact />}
         <Actions post={post} />
-        {human && (
+        {post.isPitch && (
           <div className="mt-2 flex items-center justify-between">
             <Progress post={post} roundsToFinal={roundsToFinal} />
             <span className="text-sm font-bold text-accent">{post.points} pts</span>

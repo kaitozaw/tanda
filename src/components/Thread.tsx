@@ -1,10 +1,10 @@
 "use client";
 import { useEffect, useState } from "react";
-import type { EventView, PostView } from "@/engine/views";
+import type { EventView, PostView, RoomView } from "@/engine/views";
 import { Avatar, PostCard } from "./ui";
 
 /** A timeline post that opens to show its replies. Replies refetch every round while open. */
-export default function Thread(props: { roomId: string; round: number; post: PostView; roundsToFinal: number; mine?: boolean }) {
+export default function Thread(props: { roomId: string; round: number; post: PostView; room: RoomView["room"]; mine?: boolean }) {
   const { roomId, round, post } = props;
   const [open, setOpen] = useState(false);
   const [replies, setReplies] = useState<EventView[] | null>(null);
@@ -20,7 +20,7 @@ export default function Thread(props: { roomId: string; round: number; post: Pos
   return (
     <div className={open ? "border-b border-line" : ""}>
       <div onClick={() => setOpen((o) => !o)} className="cursor-pointer">
-        <PostCard post={post} roundsToFinal={props.roundsToFinal} mine={props.mine} />
+        <PostCard post={post} roundsToFinal={props.room.roundsToFinal} mine={props.mine} room={props.room} />
       </div>
       {open && (
         <div className="bg-card/40">

@@ -1,5 +1,5 @@
 import type { Agent, FeedItem } from "./types";
-import type { Store } from "./store";
+import { countRequests, underDailyCap, type Store } from "./store";
 import { config, rules } from "./config";
 import { buildFeed, prepare } from "./feedBuilder";
 import { runSessions, type SessionInput } from "./sessionRunner";
@@ -23,10 +23,8 @@ export interface RoundSummary {
   outputTokens: number;
 }
 
-const today = () => new Date().toISOString().slice(0, 10);
-
+/** Runs rounds for one room. The scheduler decides when (see scheduler.ts). */
 export class RoundEngine {
-  private timer: NodeJS.Timeout | null = null;
   readonly feedback: FeedbackWorker;
   lastSummary: RoundSummary | null = null;
 
@@ -42,32 +40,20 @@ export class RoundEngine {
     });
   }
 
-  start() {
-    if (this.timer) return;
-    this.timer = setInterval(() => void this.tick(), config.roundMs);
-  }
-
-  stop() {
-    if (this.timer) clearInterval(this.timer);
-    this.timer = null;
-  }
-
-  /** Why the engine is not running right now, or null if it would run. */
+  /** Why this room would not run a round, or null if it would (the scheduler may still queue it). */
   idleReason(): string | null {
     const room = this.store.room;
+    if (room.status === "generating") return "building audience";
+    if (room.status === "error") return "audience failed";
     if (room.paused) return "paused";
-    if (!this.store.hasPendingHumanPosts()) return "waiting for posts";
-    if (room.requestDay === today() && room.requestCount >= config.dailyRequestCap) return "daily cap reached";
+    if (!this.store.oldestPendingPitch()) return "waiting for pitches";
+    if (!underDailyCap(config.dailyRequestCap)) return "daily cap reached";
     return null;
   }
 
   async tick() {
     const room = this.store.room;
     if (room.running || this.idleReason()) return;
-    if (room.requestDay !== today()) {
-      room.requestDay = today();
-      room.requestCount = 0;
-    }
     room.running = true;
     try {
       this.lastSummary = await this.runRound();
@@ -94,7 +80,7 @@ export class RoundEngine {
     const ctx = prepare(pool, repostsByPost);
 
     // Not everyone opens the app every 15 minutes: more active people are online more often.
-    const agents = store.activeAgents();
+    const agents = store.agentList();
     const online = agents.filter((a) => Math.random() < 0.5 + 0.5 * a.persona.activity);
     const posters = pickPosters(online, Math.max(1, Math.round((rules.postersPerRound * agents.length) / 1000)));
 
@@ -106,7 +92,11 @@ export class RoundEngine {
       if (feed.length === 0 && !mayPost) continue;
       feeds.set(agent.id, feed);
       sessions.push({ agent, feed, mayPost });
-      for (const it of feed) it.post.counts.impressions++;
+      for (const it of feed) {
+        it.post.counts.impressions++;
+        if (it.viaId) it.post.counts.impressionsViaRepost++;
+        if (it.post.authorType === "member" && !it.post.seenBy.includes(agent.id)) it.post.seenBy.push(agent.id);
+      }
     }
 
     const { results, stats } = await runSessions(store, sessions);
@@ -115,7 +105,7 @@ export class RoundEngine {
     const finalized = finalizeRound(store, pool);
 
     store.room.round = round;
-    store.room.requestCount += config.fakeLlm ? 0 : sessions.length;
+    if (!config.fakeLlm) countRequests(sessions.length);
     store.room.lastRoundMs = Date.now() - started;
 
     await this.persist();

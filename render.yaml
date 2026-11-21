@@ -6,7 +6,7 @@ services:
     numInstances: 1
     buildCommand: npm ci --include=dev && npm run build
     startCommand: npm start
-    healthCheckPath: /api/rooms/au-u16-ban
+    healthCheckPath: /api/health
     envVars:
       - key: NODE_VERSION
         value: "22"
@@ -18,6 +18,10 @@ services:
         value: "0"
       - key: AGENT_COUNT
         value: "1000"
+      - key: MAX_ACTIVE_ROOMS
+        value: "3"
+      - key: MAX_ROOMS
+        value: "20"
       - key: CONCURRENCY
         value: "1000"
       - key: FEEDBACK_CONCURRENCY
