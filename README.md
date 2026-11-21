@@ -12,7 +12,7 @@ npm run dev                   # http://localhost:3000
 npm run simulate -- --users 150 --seconds 5    # load test: fake members with open sockets post in a burst
 npm test
 ```
-Admin page: `/admin` (token = `ADMIN_TOKEN`): pause, resume, run a round now, reset the room.
+Admin page: `/admin` (no login, anyone with the URL): status, pause, resume, reset the room.
 
 ## Real agents
 Set `ANTHROPIC_API_KEY` (or `OPENROUTER_API_KEY` for local dev) and `FAKE_LLM=0`.
@@ -21,4 +21,3 @@ Set `ANTHROPIC_API_KEY` (or `OPENROUTER_API_KEY` for local dev) and `FAKE_LLM=0`
 
 ## Deploy (Render)
 Push the repo, create a Blueprint from `render.yaml`, and set `ANTHROPIC_API_KEY` in the dashboard.
-`ADMIN_TOKEN` is generated; read it in the service's Environment tab.

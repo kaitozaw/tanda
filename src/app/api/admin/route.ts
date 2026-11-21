@@ -6,7 +6,7 @@ import { save } from "@/engine/persist";
 
 export const dynamic = "force-dynamic";
 
-const authorised = (token: unknown) => !!config.adminToken && token === config.adminToken;
+// No auth on purpose (hackathon): anyone who opens /admin can pause, resume and reset.
 
 function status() {
   const store = getStore();
@@ -25,14 +25,12 @@ function status() {
   };
 }
 
-export async function GET(req: Request) {
-  if (!authorised(new URL(req.url).searchParams.get("token"))) return NextResponse.json({ error: "Unauthorised" }, { status: 401 });
+export async function GET() {
   return NextResponse.json(status());
 }
 
 export async function POST(req: Request) {
-  const body = (await req.json().catch(() => ({}))) as { token?: unknown; action?: unknown };
-  if (!authorised(body.token)) return NextResponse.json({ error: "Unauthorised" }, { status: 401 });
+  const body = (await req.json().catch(() => ({}))) as { action?: unknown };
   const store = getStore();
   if (body.action === "pause" || body.action === "resume") store.room.paused = body.action === "pause";
   else if (body.action === "reset") await reset();

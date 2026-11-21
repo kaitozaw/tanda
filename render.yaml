@@ -12,8 +12,6 @@ services:
         value: "22"
       - key: ANTHROPIC_API_KEY
         sync: false # set in the Render dashboard
-      - key: ADMIN_TOKEN
-        generateValue: true
       - key: FAKE_LLM
         value: "0"
       - key: AGENT_COUNT

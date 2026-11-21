@@ -13,7 +13,6 @@ export const config = {
   refreshMs: num(process.env.REFRESH_MS, 1000),
   dailyRequestCap: num(process.env.DAILY_REQUEST_CAP, 200000),
   fakeLlm: process.env.FAKE_LLM === "1" || !hasLlmKey(),
-  adminToken: process.env.ADMIN_TOKEN ?? "",
   databaseUrl: process.env.DATABASE_URL ?? "",
   // OpenRouter uses its own model ids; override with AGENT_MODEL / FEEDBACK_MODEL if they differ.
   agentModel: process.env.AGENT_MODEL ?? (usingOpenRouter() ? "anthropic/claude-haiku-5.5" : "claude-haiku-5-5"),
