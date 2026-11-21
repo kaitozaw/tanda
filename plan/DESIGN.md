@@ -39,16 +39,17 @@ How we build what [PRODUCT.md](PRODUCT.md) describes. Rules (audience mix, feed 
 - The architecture is unchanged: one open room, one round engine, state in memory. Markets that are "Coming soon" exist only as config and a card on the home page. They have no store, no agents and no rounds.
 - The round engine works on in-memory state for speed. The whole room is saved to Postgres as one snapshot after each round (and a few seconds after joins and posts), and loaded on restart.
 - Run a single instance with no autoscaling (state lives in memory), on Render `standard` (1 CPU / 2GB) so it does not sleep and has headroom for the demo burst.
-- The round engine runs on the server, not in serverless functions, because it calls the API 1,000 times every 15s.
+- The round engine runs on the server, not in serverless functions, because a round can call the API hundreds of times every 15s.
 
-### Load during the demo
-The worst moment is ~100+ people pitching within a few seconds, then many pitches finalizing in the same round.
+### Load
+Teams post before the demo, at different times, so load is usually a few pitches at once. The design still handles a burst (~100 people pitching within seconds), which is what the rehearsal tests.
 - **Refresh fan-out.** Every client refetches the room on each `refresh` push, so pushing on every post would cost posts × clients GETs (100 × 100 = 10,000). The broadcaster sends at most one `refresh` per room per `REFRESH_MS` (1s): the first goes out at once and later ones in the window merge into one trailing push. Clients add 0–0.5s jitter and run one GET at a time. Feedback completions go through the same throttle, so the reveal does not cause a second spike.
 - **Agent load follows live pitches, not people.** Only agents with a pitch to see run a session. A pitch costs about 150 sessions in its first round and 20–300 in each later round (per 1,000 agents), so roughly 200–1,050 sessions over its life, shared when pitches overlap (up to 3 per feed). A quiet room costs nothing.
-- **Feedback.** Pitches made in the same 15s finalize together, so the worker runs 30 Sonnet requests in parallel (`FEEDBACK_CONCURRENCY`) to have them ready within the 1-minute reveal.
-- **Claude rate limits.** A round is ~750 Haiku requests within seconds (~3,000 per minute). Failed sessions count as "no action" without retrying, so `/admin` → `lastRound` splits `failed` into `rateLimited` (raise the org limit) and `timedOut`. The server logs a warning when more than 5% fail.
+- **Feedback.** Pitches made in the same 15s finalize together, so the worker runs 30 Sonnet requests in parallel (`FEEDBACK_CONCURRENCY`). A lone pitch has its feedback about a minute after it is posted.
+- **Claude rate limits.** A round is one Haiku request per agent with a pitch to see, sent within seconds: at most 1,000 per round (~4,000 per minute) when many pitches are live. Failed sessions count as "no action" without retrying, so `/admin` → `lastRound` splits `failed` into `rateLimited` (raise the org limit) and `timedOut`. The server logs a warning when more than 5% fail.
 - **Spam.** One pitch per member per 5s (`429` otherwise), so one person cannot flood the room.
 - **Rehearsal.** `npm run simulate -- --users 150 --seconds 5` opens a socket per fake member that refetches like a phone, so it measures the fan-out, not just the POSTs. With FAKE_LLM on a laptop: 120 users in 10s → 1,560 GETs (was 14,640); 200 users in 3s → 0 failures (connections timed out before).
+- **Measured on Render** (`standard`, 1,000 agents, real Haiku, before exposure planning): 100 users pitching in 10s → 0 failures, POST p50 238ms / p95 518ms, room GET p95 2.1s; a 758-session round took 8.1s with 0 rate-limited or timed out; about $0.33 of Haiku per round (≈$0.0004 per session).
 
 ## Tech stack
 - TypeScript, Next.js with a custom server (`server.ts`), so the UI, the API, Socket.IO and the engine run in one process.
