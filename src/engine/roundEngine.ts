@@ -106,7 +106,15 @@ export class RoundEngine {
       if (feed.length === 0 && !mayPost) continue;
       feeds.set(agent.id, feed);
       sessions.push({ agent, feed, mayPost });
-      for (const it of feed) it.post.counts.impressions++;
+      for (const it of feed) {
+        it.post.counts.impressions++;
+        // Who has seen each pitch: feedback counts it per segment, and pitch slots balance on it.
+        const viewers = ctx.seen.get(it.post.id);
+        if (viewers && !viewers.has(agent.id)) {
+          viewers.add(agent.id);
+          it.post.seenBy.push(agent.id);
+        }
+      }
     }
 
     const { results, stats } = await runSessions(store, sessions);

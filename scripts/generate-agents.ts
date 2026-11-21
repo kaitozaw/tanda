@@ -1,26 +1,33 @@
 /**
- * Generates data/agents.json: 1,000 personas for the "Australia's under-16 social media ban" room.
- * Attributes come from rules below. With ANTHROPIC_API_KEY set (and no --no-llm), Haiku writes a
- * short bio for each persona in batches; otherwise a template bio is used.
+ * Generates data/rooms/<market>/agents.json: 1,000 personas for one market (plan/PRODUCT.md → Audience).
+ * Attributes come from the market's tables below. With ANTHROPIC_API_KEY set (and no --no-llm), Haiku
+ * writes a short bio for each persona in batches; otherwise a template bio is used. Bios already
+ * written by the model are kept on a re-run (drafts are deterministic, so ids match).
  *
- *   npm run agents:generate            # rules + Haiku bios
- *   npm run agents:generate -- --no-llm
+ *   npm run agents:generate -- --market au            # rules + Haiku bios
+ *   npm run agents:generate -- --market au --no-llm
  */
 import "dotenv/config";
 import fs from "node:fs";
+import path from "node:path";
 import { createClient, hasLlmKey } from "../src/engine/llm";
-import { config } from "../src/engine/config";
+import { config, rules } from "../src/engine/config";
+import { getMarket } from "../src/engine/markets";
 import { z } from "zod";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
-import type { Persona } from "../src/engine/types";
+import { POWER_TYPES, type AgentType, type Persona, type PowerType } from "../src/engine/types";
 
 const COUNT = 1000;
-const OUT = "data/agents.json";
+const arg = (name: string) => {
+  const i = process.argv.indexOf(`--${name}`);
+  return i >= 0 ? process.argv[i + 1] : undefined;
+};
 
 // Deterministic RNG so the file is reproducible.
 let seed = 20261121;
 const rand = () => ((seed = (seed * 1664525 + 1013904223) % 4294967296) / 4294967296);
 const pick = <T,>(xs: readonly T[]) => xs[Math.floor(rand() * xs.length)];
+const sample = <T,>(xs: readonly T[], n: number) => [...xs].sort(() => rand() - 0.5).slice(0, n);
 const weighted = <T,>(xs: readonly (readonly [T, number])[]) => {
   const total = xs.reduce((s, [, w]) => s + w, 0);
   let r = rand() * total;
@@ -33,84 +40,218 @@ const normal = (mean: number, sd: number) => {
   return mean + sd * Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
 };
 const clamp = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x));
+const trait = (mean: number, sd = 0.15) => Number(clamp(normal(mean, sd), 0.02, 0.98).toFixed(2));
 
-// segment, weight, age range, stance mean (support for the ban, 0-100), roles
-const SEGMENTS = [
-  ["Parents of teens", 18, [35, 55], 72, ["parent of a 13-year-old", "parent of two teens", "single mum of a 14-year-old", "dad of a 12-year-old"]],
-  ["Teenagers 16-17", 6, [16, 17], 25, ["year 11 student", "year 12 student", "apprentice"]],
-  ["University students", 9, [18, 24], 35, ["uni student", "law student", "psychology student", "comp sci student"]],
-  ["Teachers & educators", 8, [25, 62], 66, ["high school teacher", "primary teacher", "school principal", "school counsellor"]],
-  ["Health & wellbeing", 6, [28, 60], 68, ["GP", "youth psychologist", "paediatric nurse", "mental health worker"]],
-  ["Tech workers", 9, [24, 45], 38, ["software engineer", "product manager", "data scientist", "UX designer"]],
-  ["Creators & gamers", 6, [18, 32], 22, ["content creator", "streamer", "esports player", "TikTok creator"]],
-  ["Small business", 7, [28, 60], 48, ["cafe owner", "online shop owner", "tradie", "marketing consultant"]],
-  ["Civil liberties & privacy", 5, [22, 60], 20, ["privacy advocate", "civil liberties lawyer", "digital rights volunteer"]],
-  ["Retirees & grandparents", 9, [62, 82], 74, ["retired nurse", "grandparent", "retired engineer", "retired teacher"]],
-  ["Journalists & commentators", 4, [26, 58], 50, ["journalist", "political commentator", "podcaster"]],
-  ["Young professionals", 9, [23, 34], 45, ["accountant", "nurse", "sales rep", "public servant"]],
-  ["Rural & regional", 4, [25, 70], 60, ["farmer", "regional teacher", "mine worker", "country GP"]],
-] as const;
+// ---------------------------------------------------------------------------------------------
+// Market tables
+// ---------------------------------------------------------------------------------------------
 
-const REGIONS = [
-  ["Sydney, NSW", 21], ["Melbourne, VIC", 20], ["Brisbane, QLD", 10], ["Perth, WA", 8], ["Adelaide, SA", 5],
-  ["Gold Coast, QLD", 3], ["Newcastle, NSW", 2], ["Canberra, ACT", 2], ["Hobart, TAS", 1.5], ["Geelong, VIC", 1.5],
-  ["Darwin, NT", 0.6], ["Regional NSW", 8], ["Regional VIC", 6], ["Regional QLD", 7], ["Regional WA", 2], ["Regional SA", 1.5],
-] as const;
+/** Means (0-1) for adoption, price sensitivity and scepticism. */
+type Traits = { adoption: number; price: number; scepticism: number };
 
-const INTERESTS = [
-  "mental health", "parenting", "free speech", "privacy", "age verification", "big tech", "education",
-  "online safety", "gaming", "AFL", "cricket", "small business", "politics", "tech policy", "cyberbullying",
-  "creator economy", "civil liberties", "family", "youth culture", "news",
-] as const;
-
-const FIRST = [
-  "Olivia", "Jack", "Charlotte", "Noah", "Mia", "Oliver", "Ava", "William", "Isla", "Leo", "Grace", "Lucas",
-  "Chloe", "Thomas", "Zoe", "Liam", "Ruby", "Henry", "Sophie", "Ethan", "Priya", "Arjun", "Mei", "Wei",
-  "Aisha", "Omar", "Hannah", "Ben", "Emily", "Josh", "Tahlia", "Riley", "Jasmine", "Kai", "Ngoc", "Minh",
-  "Lachlan", "Matilda", "Harrison", "Georgia", "Sam", "Bella", "Daniel", "Lily", "Hamish", "Kirra", "Jarrah",
-  "Fatima", "Ali", "Sofia", "Luca", "Maria", "Nikos", "Elena", "Anh", "Raj", "Sienna", "Cooper", "Evie",
-] as const;
-const LAST = [
-  "Smith", "Jones", "Williams", "Brown", "Wilson", "Taylor", "Nguyen", "Johnson", "Martin", "White",
-  "Anderson", "Walker", "Thompson", "Kelly", "Ryan", "Chen", "Singh", "Patel", "Wang", "Tran", "Murphy",
-  "Lee", "Harris", "Clarke", "Papadopoulos", "Rossi", "Khan", "O'Brien", "Campbell", "Mitchell",
-] as const;
-
-type Draft = Omit<Persona, "bio"> & { id: string; handle: string; stance: number };
-
-function draft(i: number): Draft {
-  const seg = weighted(SEGMENTS.map((s) => [s, s[1]] as const));
-  const [segment, , [minAge, maxAge], stanceMean, roles] = seg;
-  const leaning = weighted([["left", 35], ["centre", 35], ["right", 30]] as const);
-  const leanShift = leaning === "right" ? 5 : leaning === "left" ? -3 : 0;
-  const first = pick(FIRST);
-  const last = pick(LAST);
-  const interests = new Set<string>();
-  while (interests.size < 3) interests.add(pick(INTERESTS));
-  const handle = `${first}${last}`.toLowerCase().replace(/[^a-z]/g, "").slice(0, 12) + "_" + (i % 97);
-  return {
-    id: `a${String(i).padStart(4, "0")}`,
-    handle,
-    name: `${first} ${last}`,
-    age: Math.round(minAge + rand() * (maxAge - minAge)),
-    region: weighted(REGIONS),
-    role: pick(roles),
-    segment,
-    leaning,
-    interests: [...interests],
-    activity: Number(clamp(normal(0.45, 0.2), 0.05, 0.95).toFixed(2)),
-    openness: Number(clamp(normal(0.4, 0.18), 0.05, 0.9).toFixed(2)),
-    stance: Math.round(clamp(normal(stanceMean + leanShift, 15), 2, 98)),
-  };
+interface Group extends Traits {
+  name: string;
+  /** Percent of the customer crowd. */
+  share: number;
+  ages: [number, number];
+  roles: string[];
+  painPoints: string[];
 }
 
-function templateBio(d: Draft) {
-  return `${d.age}-year-old ${d.role} from ${d.region}. Into ${d.interests.join(", ")}.`;
+interface Archetype {
+  name: string;
+  role: string;
+  priorities: string[];
+  scepticism: number;
 }
+
+interface MarketTables {
+  regions: (readonly [string, number])[];
+  first: string[];
+  last: string[];
+  groups: Group[];
+  archetypes: Record<PowerType, Archetype[]>;
+}
+
+const AU: MarketTables = {
+  regions: [
+    ["Sydney, NSW", 21], ["Melbourne, VIC", 20], ["Brisbane, QLD", 10], ["Perth, WA", 8], ["Adelaide, SA", 5],
+    ["Gold Coast, QLD", 3], ["Newcastle, NSW", 2], ["Canberra, ACT", 2], ["Hobart, TAS", 1.5], ["Geelong, VIC", 1.5],
+    ["Darwin, NT", 0.6], ["Regional NSW", 8], ["Regional VIC", 6], ["Regional QLD", 7], ["Regional WA", 2], ["Regional SA", 1.5],
+  ],
+  first: [
+    "Olivia", "Jack", "Charlotte", "Noah", "Mia", "Oliver", "Ava", "William", "Isla", "Leo", "Grace", "Lucas",
+    "Chloe", "Thomas", "Zoe", "Liam", "Ruby", "Henry", "Sophie", "Ethan", "Priya", "Arjun", "Mei", "Wei",
+    "Aisha", "Omar", "Hannah", "Ben", "Emily", "Josh", "Tahlia", "Riley", "Jasmine", "Kai", "Ngoc", "Minh",
+    "Lachlan", "Matilda", "Harrison", "Georgia", "Sam", "Bella", "Daniel", "Lily", "Hamish", "Kirra", "Jarrah",
+    "Fatima", "Ali", "Sofia", "Luca", "Maria", "Nikos", "Elena", "Anh", "Raj", "Sienna", "Cooper", "Evie",
+  ],
+  last: [
+    "Smith", "Jones", "Williams", "Brown", "Wilson", "Taylor", "Nguyen", "Johnson", "Martin", "White",
+    "Anderson", "Walker", "Thompson", "Kelly", "Ryan", "Chen", "Singh", "Patel", "Wang", "Tran", "Murphy",
+    "Lee", "Harris", "Clarke", "Papadopoulos", "Rossi", "Khan", "O'Brien", "Campbell", "Mitchell",
+  ],
+  groups: [
+    {
+      name: "Young professionals", share: 13, ages: [23, 34], adoption: 0.6, price: 0.55, scepticism: 0.4,
+      roles: ["accountant", "nurse", "marketing coordinator", "junior lawyer", "public servant", "sales rep"],
+      painPoints: ["rent eats half my pay", "no time after long work days", "saving for a house feels impossible", "too many subscriptions already"],
+    },
+    {
+      name: "Families with kids", share: 15, ages: [30, 50], adoption: 0.4, price: 0.75, scepticism: 0.5,
+      roles: ["parent of two primary schoolers", "working mum of a toddler", "dad of three", "single parent"],
+      painPoints: ["grocery bills keep rising", "juggling school runs and work", "childcare costs", "screen time battles"],
+    },
+    {
+      name: "Students", share: 8, ages: [18, 25], adoption: 0.7, price: 0.9, scepticism: 0.35,
+      roles: ["uni student", "TAFE student", "international student", "postgrad researcher"],
+      painPoints: ["living on a tight budget", "finding part-time work", "share house hassles", "textbook and transport costs"],
+    },
+    {
+      name: "Retirees", share: 9, ages: [63, 82], adoption: 0.2, price: 0.7, scepticism: 0.65,
+      roles: ["retired teacher", "retired nurse", "grandparent", "self-funded retiree"],
+      painPoints: ["making super last", "health appointments and costs", "apps that are hard to use", "scams targeting older people"],
+    },
+    {
+      name: "Small business owners", share: 10, ages: [28, 62], adoption: 0.45, price: 0.7, scepticism: 0.6,
+      roles: ["cafe owner", "online shop owner", "hair salon owner", "physio clinic owner", "bookkeeper with her own practice"],
+      painPoints: ["admin eats my evenings", "cash flow and late payments", "finding and keeping staff", "rising rent and energy costs"],
+    },
+    {
+      name: "Tradies", share: 8, ages: [20, 60], adoption: 0.35, price: 0.65, scepticism: 0.6,
+      roles: ["electrician", "plumber", "builder", "landscaper", "sparky running a two-person crew"],
+      painPoints: ["chasing invoices", "quoting and paperwork after hours", "material costs", "scheduling jobs around weather"],
+    },
+    {
+      name: "Corporate employees", share: 10, ages: [28, 55], adoption: 0.5, price: 0.45, scepticism: 0.5,
+      roles: ["project manager at a bank", "HR business partner", "operations manager", "IT procurement lead", "finance analyst"],
+      painPoints: ["too many tools that do not talk to each other", "slow approval processes", "hybrid work friction", "proving ROI to my boss"],
+    },
+    {
+      name: "Regional Australians", share: 7, ages: [25, 70], adoption: 0.3, price: 0.7, scepticism: 0.6,
+      roles: ["farmer", "regional GP", "mine worker", "country publican", "agricultural contractor"],
+      painPoints: ["patchy internet and phone coverage", "long drives for basic services", "services built for city people", "freight costs"],
+    },
+    {
+      name: "Tech early adopters", share: 5, ages: [22, 45], adoption: 0.9, price: 0.35, scepticism: 0.35,
+      roles: ["software engineer", "product manager", "UX designer", "data scientist", "startup founder"],
+      painPoints: ["clunky local apps", "wanting tools that just work", "privacy of my data", "paying for things that should be free"],
+    },
+    {
+      name: "Sceptics", share: 15, ages: [30, 75], adoption: 0.1, price: 0.8, scepticism: 0.9,
+      roles: ["long-time spreadsheet user", "cost-cutting finance manager", "retired engineer", "self-employed handyman"],
+      painPoints: ["seen too many apps come and go", "do not trust new companies with my data", "happy with what I have", "hate another monthly fee"],
+    },
+  ],
+  archetypes: {
+    investor: [
+      { name: "Seed angels", role: "Sydney-based seed angel, ex-founder", priorities: ["founder-market fit", "early traction", "a real pain point"], scepticism: 0.7 },
+      { name: "Series A VCs", role: "Partner at a Melbourne Series A fund", priorities: ["market size beyond Australia", "defensibility", "unit economics"], scepticism: 0.8 },
+      { name: "Impact investors", role: "Impact fund investment manager", priorities: ["measurable social outcome", "sustainable revenue"], scepticism: 0.65 },
+      { name: "Corporate VC", role: "Venture lead at a big-four bank's investment arm", priorities: ["strategic fit with incumbents", "regulatory risk"], scepticism: 0.75 },
+    ],
+    industry_lead: [
+      { name: "Incumbent execs", role: "Head of product at a major Australian retailer", priorities: ["protecting market share", "what customers ask for"], scepticism: 0.75 },
+      { name: "Potential partners", role: "Partnerships lead at an Australian SaaS platform", priorities: ["integration value", "shared customers"], scepticism: 0.6 },
+      { name: "Competitors", role: "Founder of a competing local startup", priorities: ["differentiation", "pricing pressure"], scepticism: 0.85 },
+      { name: "Industry bodies", role: "Policy manager at an industry association", priorities: ["impact on members", "standards and compliance"], scepticism: 0.7 },
+    ],
+    regulator: [
+      { name: "Consumer protection", role: "Policy officer at the consumer watchdog", priorities: ["misleading claims", "fair pricing", "subscription traps"], scepticism: 0.75 },
+      { name: "Privacy", role: "Adviser at the privacy regulator", priorities: ["data collection", "consent", "security of personal data"], scepticism: 0.8 },
+      { name: "Sector regulators", role: "Analyst at a financial services regulator", priorities: ["licensing", "consumer harm"], scepticism: 0.8 },
+      { name: "Government policy", role: "Small business policy adviser in state government", priorities: ["jobs", "productivity", "regional access"], scepticism: 0.6 },
+    ],
+    media: [
+      { name: "Tech press", role: "Startup reporter at an Australian tech news site", priorities: ["a fresh angle", "real customers", "local founders"], scepticism: 0.7 },
+      { name: "Business press", role: "Small business columnist at a national paper", priorities: ["cost of living angle", "stories readers relate to"], scepticism: 0.65 },
+      { name: "Creators", role: "Money-saving creator with a big TikTok following", priorities: ["something my audience can use today", "honest value"], scepticism: 0.5 },
+      { name: "Community leads", role: "Organiser of a local founder community", priorities: ["local success stories", "helping members"], scepticism: 0.45 },
+    ],
+  },
+};
+
+const TABLES: Record<string, MarketTables> = { au: AU };
+
+// ---------------------------------------------------------------------------------------------
+// Drafts
+// ---------------------------------------------------------------------------------------------
+
+type Draft = Omit<Persona, "bio"> & { id: string; handle: string };
+const HANDLE_TAG: Record<AgentType, string> = { customer: "", investor: "vc", industry_lead: "exec", regulator: "gov", media: "news" };
+
+/** Agents per type for `count` agents: the PRODUCT.md mix scaled. */
+function mixCounts(count: number): Record<AgentType, number> {
+  const out = { customer: 0 } as Record<AgentType, number>;
+  let power = 0;
+  for (const t of POWER_TYPES) {
+    out[t] = Math.round((rules.mix[t] * count) / 1000);
+    power += out[t];
+  }
+  out.customer = count - power;
+  return out;
+}
+
+function drafts(marketId: string, t: MarketTables): Draft[] {
+  const counts = mixCounts(COUNT);
+  const out: (Omit<Draft, "id" | "handle"> & { key: number })[] = [];
+  const push = (type: AgentType, group: string, role: string, priorities: string[], ages: [number, number], tr: Traits, k: number, n: number) =>
+    out.push({
+      market: marketId,
+      name: `${pick(t.first)} ${pick(t.last)}`,
+      age: Math.round(ages[0] + rand() * (ages[1] - ages[0])),
+      region: weighted(t.regions),
+      tier: type === "customer" ? "crowd" : "power",
+      type,
+      role,
+      group,
+      priorities,
+      adoption: trait(tr.adoption),
+      priceSensitivity: trait(tr.price),
+      scepticism: trait(tr.scepticism, 0.1),
+      activity: type === "customer" ? trait(0.45, 0.2) : trait(0.5, 0.15),
+      openness: type === "customer" ? trait(tr.scepticism > 0.8 ? 0.2 : 0.45, 0.15) : trait(0.35, 0.1),
+      // Sort key so any prefix of the file keeps the mix (AGENT_COUNT takes a prefix): stratified
+      // per power type, random for customers (so every group is spread through the file).
+      key: type === "customer" ? rand() : (k + rand()) / n,
+    });
+
+  for (const type of POWER_TYPES) {
+    const n = counts[type];
+    for (let k = 0; k < n; k++) {
+      const a = t.archetypes[type][k % t.archetypes[type].length];
+      push(type, a.name, a.role, a.priorities, [30, 62], { adoption: 0.6, price: 0.3, scepticism: a.scepticism }, k, n);
+    }
+  }
+  const n = counts.customer;
+  let k = 0;
+  for (const s of t.groups) {
+    const m = Math.round((s.share / 100) * n);
+    for (let j = 0; j < m && k < n; j++, k++) push("customer", s.name, pick(s.roles), sample(s.painPoints, 2 + Math.floor(rand() * 2)), s.ages, s, k, n);
+  }
+  // Rounding leftovers go to the first group.
+  for (const s = t.groups[0]; k < n; k++) push("customer", s.name, pick(s.roles), sample(s.painPoints, 2), s.ages, s, k, n);
+
+  return out
+    .sort((a, b) => a.key - b.key)
+    .map(({ key: _key, ...p }, i) => {
+      const [first, last] = p.name.split(" ");
+      const slug = (first + last).toLowerCase().replace(/[^a-z]/g, "").slice(0, 12);
+      const handle = p.type === "customer" ? `${slug}_${i}` : `${HANDLE_TAG[p.type]}_${first.toLowerCase().replace(/[^a-z]/g, "")}${i}`;
+      return { ...p, id: `a${String(i).padStart(4, "0")}`, handle };
+    });
+}
+
+const templateBio = (d: Pick<Persona, "role" | "region" | "priorities">) =>
+  `${d.role.charAt(0).toUpperCase()}${d.role.slice(1)} in ${d.region}. Thinking about ${d.priorities.slice(0, 2).join(" and ")}.`;
+
+// ---------------------------------------------------------------------------------------------
+// Bios
+// ---------------------------------------------------------------------------------------------
 
 const BioBatch = z.object({ bios: z.array(z.object({ id: z.string(), bio: z.string() })) });
 
-async function llmBios(drafts: Draft[]): Promise<Map<string, string>> {
+async function llmBios(drafts: Draft[], summary: string): Promise<Map<string, string>> {
   const client = createClient();
   const out = new Map<string, string>();
   const batches: Draft[][] = [];
@@ -119,7 +260,7 @@ async function llmBios(drafts: Draft[]): Promise<Map<string, string>> {
   await Promise.all(
     batches.map(async (batch) => {
       const list = batch
-        .map((d) => `${d.id}: ${d.name}, ${d.age}, ${d.role}, ${d.region}, ${d.leaning}-leaning, interests: ${d.interests.join(", ")}, stance on the under-16 social media ban: ${d.stance}/100 support`)
+        .map((d) => `${d.id}: ${d.name}, ${d.age}, ${d.role}, ${d.region}; ${d.group}; thinking about: ${d.priorities.join(", ")}`)
         .join("\n");
       for (let attempt = 1; attempt <= 3; attempt++) try {
         const res = await client.messages.parse({
@@ -130,14 +271,14 @@ async function llmBios(drafts: Draft[]): Promise<Map<string, string>> {
             {
               role: "user",
               content:
-                "Write a one-sentence social media profile bio (max 25 words, first person, Australian English, " +
-                "no hashtags) for each persona below. Make them feel like real, different people. Do not state the " +
-                "stance number.\n\n" + list,
+                `The people below live and work in this market:\n<market>${summary}</market>\n\n` +
+                "Write a one-sentence social media profile bio (max 25 words, first person, in the local voice, " +
+                "no hashtags) for each persona. Make them feel like real, different people: vary tone, detail and quirks.\n\n" + list,
             },
           ],
           output_config: { format: zodOutputFormat(BioBatch) },
         });
-        for (const b of res.parsed_output?.bios ?? []) out.set(b.id, b.bio);
+        for (const b of res.parsed_output?.bios ?? []) out.set(b.id, b.bio.trim().slice(0, 200));
         break;
       } catch (err) {
         if (attempt === 3) console.warn("\nbio batch failed 3 times, using templates:", (err as Error).message.slice(0, 120));
@@ -151,28 +292,34 @@ async function llmBios(drafts: Draft[]): Promise<Map<string, string>> {
 }
 
 async function main() {
-  const drafts = Array.from({ length: COUNT }, (_, i) => draft(i));
+  const marketId = arg("market") ?? "au";
+  const market = getMarket(marketId);
+  const tables = TABLES[marketId];
+  if (!market || !tables) throw new Error(`No tables for market "${marketId}"`);
+  const out = path.join("data/rooms", marketId, "agents.json");
+
+  const ds = drafts(marketId, tables);
   const useLlm = !process.argv.includes("--no-llm") && hasLlmKey();
-  // Keep bios already written by the model (drafts are deterministic, so ids match).
   const previous = new Map<string, string>();
-  if (fs.existsSync(OUT)) {
-    for (const a of JSON.parse(fs.readFileSync(OUT, "utf8")) as { id: string; persona: Persona }[]) {
-      if (!/^\d+-year-old /.test(a.persona.bio)) previous.set(a.id, a.persona.bio);
+  if (fs.existsSync(out)) {
+    const byId = new Map(ds.map((d) => [d.id, d]));
+    for (const a of JSON.parse(fs.readFileSync(out, "utf8")) as { id: string; persona: Persona }[]) {
+      const d = byId.get(a.id);
+      // Keep a model-written bio only if the persona is unchanged and the bio is not the template.
+      if (d && d.role === a.persona.role && d.group === a.persona.group && a.persona.bio !== templateBio(a.persona)) previous.set(a.id, a.persona.bio);
     }
   }
-  const missing = drafts.filter((d) => !previous.has(d.id));
-  const fresh = useLlm && missing.length ? await llmBios(missing) : new Map<string, string>();
+  const missing = ds.filter((d) => !previous.has(d.id));
+  const fresh = useLlm && missing.length ? await llmBios(missing, market.summary) : new Map<string, string>();
   const bios = new Map([...previous, ...fresh]);
-  const agents = drafts.map(({ id, handle, stance, ...p }) => ({
-    id,
-    handle,
-    stance,
-    persona: { ...p, bio: bios.get(id) ?? templateBio({ id, handle, stance, ...p }) },
-  }));
-  fs.mkdirSync("data", { recursive: true });
-  fs.writeFileSync(OUT, JSON.stringify(agents, null, 1));
-  const avg = agents.reduce((s, a) => s + a.stance, 0) / agents.length;
-  console.log(`wrote ${agents.length} agents to ${OUT} (llm bios: ${bios.size}, avg stance ${avg.toFixed(1)})`);
+  const agents = ds.map(({ id, handle, ...p }) => ({ id, handle, persona: { ...p, bio: bios.get(id) ?? templateBio(p) } }));
+
+  fs.mkdirSync(path.dirname(out), { recursive: true });
+  fs.writeFileSync(out, JSON.stringify(agents, null, 1));
+  const counts = new Map<string, number>();
+  for (const a of agents) counts.set(a.persona.type, (counts.get(a.persona.type) ?? 0) + 1);
+  const byType = [...counts].map(([t, n]) => `${t} ${n}`).join(", ");
+  console.log(`wrote ${agents.length} agents to ${out} (${byType}; llm bios: ${bios.size})`);
 }
 
 main();

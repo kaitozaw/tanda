@@ -6,7 +6,7 @@ services:
     numInstances: 1
     buildCommand: npm ci --include=dev && npm run build
     startCommand: npm start
-    healthCheckPath: /api/rooms/au-u16-ban
+    healthCheckPath: /api/rooms/au
     envVars:
       - key: NODE_VERSION
         value: "22"

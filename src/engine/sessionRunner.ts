@@ -4,7 +4,8 @@ import pLimit from "p-limit";
 import type { Agent, FeedItem, SessionResult } from "./types";
 import type { Store } from "./store";
 import { config } from "./config";
-import { SYSTEM_PROMPT, TOOLS, userMessage } from "./prompts";
+import { getMarket, OPEN_MARKET } from "./markets";
+import { SYSTEM_PROMPT, TOOLS, marketContext, userMessage } from "./prompts";
 
 export interface SessionInput {
   agent: Agent;
@@ -30,8 +31,8 @@ const emptyResult = (agentId: string): SessionResult => ({
   replies: [],
   follows: [],
   unfollows: [],
+  signals: [],
   post: null,
-  end: null,
 });
 
 let client: Anthropic | null = null;
@@ -52,13 +53,9 @@ export function parseToolCalls(agentId: string, blocks: Anthropic.ContentBlock[]
       case "follow": if (id) r.follows.push(id); break;
       case "unfollow": if (id) r.unfollows.push(id); break;
       case "post": if (text) r.post = text; break;
-      case "end_session":
-        if (!r.end && typeof input.stance_after === "number") {
-          r.end = {
-            stanceAfter: input.stance_after,
-            influencedBy: Array.isArray(input.influenced_by) ? input.influenced_by.filter((x): x is string => typeof x === "string") : [],
-          };
-        }
+      case "intent":
+      case "objection":
+        if (id) r.signals.push({ postId: id, kind: b.name, reason: typeof input.reason === "string" ? input.reason.trim() : "" });
         break;
     }
   }
@@ -71,7 +68,10 @@ async function runReal(store: Store, s: SessionInput, stats: RunStats): Promise<
       model: config.agentModel,
       max_tokens: 800,
       thinking: { type: "disabled" },
-      system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
+      system: [
+        { type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } },
+        { type: "text", text: marketContext(getMarket(store.room.id) ?? OPEN_MARKET), cache_control: { type: "ephemeral" } },
+      ],
       tools: TOOLS,
       messages: [{ role: "user", content: userMessage(store, s.agent, s.feed, s.mayPost) }],
     },
@@ -84,24 +84,23 @@ async function runReal(store: Store, s: SessionInput, stats: RunStats): Promise<
   return parseToolCalls(s.agent.id, res.content);
 }
 
-// ---------- FAKE_LLM: random but stance-biased behaviour, no API calls (free UI checks) ----------
-
-const sideStance = { for: 85, against: 15, neutral: 50 } as const;
+// ---------- FAKE_LLM: random behaviour shaped by the persona, no API calls (free UI checks) ----------
 
 export function runFake(s: SessionInput, rand = Math.random): SessionResult {
   const r = emptyResult(s.agent.id);
+  const p = s.agent.persona;
   for (const { post } of s.feed) {
-    const p = s.agent.persona.activity * 0.3 * (1 - Math.abs(s.agent.stance - sideStance[post.side]) / 100);
-    if (rand() < p) r.likes.push(post.id);
-    if (rand() < p * 0.2) r.reposts.push(post.id);
-    if (rand() < p * 0.15) r.replies.push({ postId: post.id, text: "(fake reply)" });
-    if (rand() < p * 0.05) r.follows.push(post.id);
+    const pr = p.activity * 0.3 * (1 - p.scepticism * 0.5);
+    if (rand() < pr) r.likes.push(post.id);
+    if (rand() < pr * 0.2) r.reposts.push(post.id);
+    if (rand() < pr * 0.15) r.replies.push({ postId: post.id, text: "(fake reply)" });
+    if (rand() < pr * 0.05) r.follows.push(post.id);
+    if (post.authorType !== "member") continue;
+    // Intent gets rarer with scepticism, objections more common.
+    if (rand() < 0.08 * (1 - p.scepticism)) r.signals.push({ postId: post.id, kind: "intent", reason: "(fake reason)" });
+    else if (rand() < 0.05 * p.scepticism) r.signals.push({ postId: post.id, kind: "objection", reason: "(fake objection)" });
   }
-  const target = s.feed[0]?.post;
-  const moved = target && rand() < s.agent.persona.openness * 0.1;
-  const shift = moved ? (target.side === "against" ? -8 : 8) : 0;
   if (s.mayPost) r.post = `(fake post by @${s.agent.handle})`;
-  r.end = { stanceAfter: Math.max(0, Math.min(100, s.agent.stance + shift)), influencedBy: moved ? [target.id] : [] };
   return r;
 }
 

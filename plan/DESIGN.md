@@ -1,22 +1,23 @@
 # Design
 
-How we build what [PRODUCT.md](PRODUCT.md) describes. Rules (feed slots, scoring, etc.) live in PRODUCT.md and are not repeated here.
+How we build what [PRODUCT.md](PRODUCT.md) describes. Rules (audience mix, feed slots, signals, scoring, etc.) live in PRODUCT.md and are not repeated here.
 
 ## Architecture
 
 ```
 ┌────────────── Browser: phone or big screen (same app) ───────────────┐
-│  Room tabs: Timeline (default) / Dashboard / My Posts                │
+│  Home: market list (one open, others "Coming soon")                  │
+│  Room tabs: Timeline (default) / Dashboard / My Pitches              │
 │  On "refresh": wait 0-0.5s, then GET state. One GET at a time;       │
 │  pushes during a GET become one follow-up GET.                       │
 └───┬──────────────────▲─────────────────────────────▲─────────────────┘
-    │ join, post       │ GET state                   │ "refresh" (room, ≤1/s)
+    │ join, pitch      │ GET state                   │ "refresh" (room, ≤1/s)
     │ (HTTP)           │ (HTTP)                      │ notify, feedback (member)
     ▼                  │                             │ (WebSocket)
 ┌───┴──────────────────┴─── Render: one Node.js process, standard plan ┐
 │                                                    │                 │
 │  Next.js: pages + API routes           Socket.IO + broadcaster       │
-│   join; post: length, word filter,     throttles "refresh" to one    │
+│   join; pitch: length, word filter,    throttles "refresh" to one    │
 │   5s cooldown per member               push per second per room      │
 │         │                                          ▲                 │
 │         │ every write asks for a refresh ──────────┤                 │
@@ -25,27 +26,28 @@ How we build what [PRODUCT.md](PRODUCT.md) describes. Rules (feed slots, scoring
 │         │    ▲                         build feeds, run sessions,    │
 │         │    │                         apply events, score, finalize │
 │         │    │                                     │                 │
-│         │  Feedback worker  ◀── finalized posts ───┤                 │
+│         │  Feedback worker  ◀── finalized pitches ─┤                 │
 │         │  (30 parallel)                           │                 │
 └─────────┬─────────┬────────────────────────────────┬─────────────────┘
           │         │                                │
           ▼         ▼                                ▼
    Render Postgres  Claude Sonnet 5.5         Claude Haiku 5.5
-   save each round, post feedback             agent sessions,
+   save each round, pitch feedback            agent sessions,
    load on restart                            up to 1,000 parallel / round
 ```
 
+- The architecture is unchanged: one open room, one round engine, state in memory. Markets that are "Coming soon" exist only as config and a card on the home page. They have no store, no agents and no rounds.
 - The round engine works on in-memory state for speed. The whole room is saved to Postgres as one snapshot after each round (and a few seconds after joins and posts), and loaded on restart.
 - Run a single instance with no autoscaling (state lives in memory), on Render `standard` (1 CPU / 2GB) so it does not sleep and has headroom for the demo burst.
 - The round engine runs on the server, not in serverless functions, because it calls the API 1,000 times every 15s.
 
 ### Load during the demo
-The worst moment is ~100+ people posting within a few seconds, then many posts finalizing in the same round.
+The worst moment is ~100+ people pitching within a few seconds, then many pitches finalizing in the same round.
 - **Refresh fan-out.** Every client refetches the room on each `refresh` push, so pushing on every post would cost posts × clients GETs (100 × 100 = 10,000). The broadcaster sends at most one `refresh` per room per `REFRESH_MS` (1s): the first goes out at once and later ones in the window merge into one trailing push. Clients add 0–0.5s jitter and run one GET at a time. Feedback completions go through the same throttle, so the reveal does not cause a second spike.
-- **Agent load does not grow with people.** Each round runs one Haiku session per online agent (~750 of 1,000), however many people post. Human posts only change what is in the feeds.
-- **Feedback.** Posts made in the same 15s finalize together, so the worker runs 30 Sonnet requests in parallel (`FEEDBACK_CONCURRENCY`) to have them ready within the 1-minute reveal.
+- **Agent load does not grow with people.** Each round runs one Haiku session per online agent (~750 of 1,000), however many people pitch. Pitches only change what is in the feeds.
+- **Feedback.** Pitches made in the same 15s finalize together, so the worker runs 30 Sonnet requests in parallel (`FEEDBACK_CONCURRENCY`) to have them ready within the 1-minute reveal.
 - **Claude rate limits.** A round is ~750 Haiku requests within seconds (~3,000 per minute). Failed sessions count as "no action" without retrying, so `/admin` → `lastRound` splits `failed` into `rateLimited` (raise the org limit) and `timedOut`. The server logs a warning when more than 5% fail.
-- **Spam.** One post per member per 5s (`429` otherwise), so one person cannot flood the room.
+- **Spam.** One pitch per member per 5s (`429` otherwise), so one person cannot flood the room.
 - **Rehearsal.** `npm run simulate -- --users 150 --seconds 5` opens a socket per fake member that refetches like a phone, so it measures the fan-out, not just the POSTs. With FAKE_LLM on a laptop: 120 users in 10s → 1,560 GETs (was 14,640); 200 users in 3s → 0 failures (connections timed out before).
 
 ## Tech stack
@@ -56,38 +58,83 @@ The worst moment is ~100+ people posting within a few seconds, then many posts f
 - Render Postgres via plain `pg`: one `snapshots` table, one `jsonb` row per room.
 - Render web service. `ANTHROPIC_API_KEY` as an env var (never committed).
 
+## Markets (`markets.ts`, replaces `rules.roomId` / `rules.topic`)
+```ts
+Market { id, name, status: "open" | "coming_soon", region, summary /* ≤600 chars: economy, culture,
+         incumbents, rules — the macro attributes agents share */ }
+```
+| id | name | status |
+|---|---|---|
+| `au` | Australian market | `open` (the room the engine runs) |
+| `jp` | Japanese market | `coming_soon` |
+| `global-b2b-saas` | Global B2B SaaS | `coming_soon` |
+
+The open market's id is the room id. Only it has `data/rooms/<id>/` and a store.
+
 ## Data (Postgres, cached in memory)
 Saved together as one `jsonb` snapshot per room (shapes live in `src/engine/types.ts`).
 ```ts
-Room    { id, topic, round, paused, running, lastRoundMs, requestDay, requestCount }
+Room    { id /* market id */, round, paused, running, lastRoundMs, requestDay, requestCount }
 Member  { id, nickname, handle, followerIds: AgentId[], joinedAt }
-Agent   { id, handle, persona: { age, region, role, leaning, interests, activity, openness },
-          stance /* 0-100 */, followingIds: (AgentId | MemberId)[], followerIds: AgentId[] }
-Post    { id, authorType: "agent" | "member", authorId, text, side: "for" | "against" | "neutral",
-          createdRound, roundsSeen, counts: { like, repost, reply, follow, unfollow, persuasion,
-          backlash, neutralShift, impressions }, points, finalized, feedback?, feedbackStatus }
-Event   { id, round, agentId, type: "like" | "repost" | "reply" | "follow" | "unfollow" |
-          "persuasion" | "backlash" | "neutralShift", postId, text?, stanceBefore?, stanceAfter? }
+Agent   { id, handle, persona: Persona, followingIds: (AgentId | MemberId)[], followerIds: AgentId[] }
+Persona { market /* market id */, name, age, region, tier: "power" | "crowd",
+          type: "customer" | "investor" | "industry_lead" | "regulator" | "media",
+          /* type = the segment */ role, group /* persona label only */, priorities: string[], adoption, priceSensitivity, scepticism,
+          activity, openness /* 0-1 each */, bio }
+Post    { id, authorType: "agent" | "member", authorId, text, createdRound, roundsSeen,
+          seenBy: AgentId[] /* pitches only, unique */, counts: Counts, points, finalized,
+          feedback?, feedbackStatus }
+Counts  { like, repost, reply, follow, unfollow, intent, objection, impressions }
+Event   { id, round, agentId, type: keyof Counts (except impressions), postId,
+          text? /* reply text or signal reason */ }
 ```
-- `agents.json` (1,000 personas) is generated once before the demo and loaded at startup.
-- `rooms/<roomId>/posts.json` holds the room's starter posts (`{ side, text }`; 20 for `au-u16-ban`). They are added on a fresh seed and on reset, so the timeline is not empty before anyone posts. A room without the file starts empty.
+- Removed from main: `Room.topic`, `Agent.stance`, `Persona.leaning` / `interests`, `Post.side`, `neutralShift`, `Event.stanceBefore` / `stanceAfter`. A member post is a pitch; there is no `isPitch` flag.
+- `seenBy` is kept for pitches only. Feedback needs to know *which* agents saw a pitch (e.g. "how many investors saw it" next to how many signalled `intent`), and storing that for every agent post would be wasteful.
+- `data/rooms/<roomId>/agents.json` (1,000 personas for that market) is generated once before the demo and loaded at startup. It moves from `data/agents.json` so each market has its own.
+- `data/rooms/<roomId>/posts.json` holds the room's starter posts (`{ type, text }`; ~20 for `au`: everyday life and work in Australia, no pitches). They are added on a fresh seed and on reset, so the timeline is not empty before anyone pitches. Each is posted by a different agent of that type. A room without the file starts empty.
 - `events` is the engagement log. Points, notifications and feedback are all computed from it.
+
+## Audience generation (`scripts/generate-agents.ts`)
+Same script as main, run once per market: `npm run agents:generate -- --market au`.
+- Code builds the personas from the market's rule tables: the PRODUCT.md mix by segment, customer groups with shares, power-tier groups (archetypes) per segment, regions, and ranges for the numeric traits. The Australian tables live in the script.
+- Haiku writes bios in batches as today, with the market's `summary` as context; a template from role + priorities is used without a key or with `--no-llm`.
+- `seed` builds the follow graph at startup with power accounts placed first in the power law, so they collect the most followers. Then media follow everyone in the power tier and investors follow industry leads.
+
+## Agent prompt (`prompts.ts`)
+Three layers, ordered so the shared parts are cached:
+1. **Tools + system rules:** the same for every agent. The PRODUCT.md realism rules, what each signal means, and the prompt-injection guard. Cache breakpoint.
+2. **Market context:** the market's `name` and `summary`. The same for every agent in the room. Cache breakpoint.
+3. **User message:** persona, the signal kinds this agent may use, the may-post flag, and the feed. Pitches are marked `pitch="yes"`.
+
+Tools: main's `like`, `repost`, `reply`, `follow`, `unfollow` and `post`, plus `intent(post_id, reason)` and `objection(post_id, reason)`. The schemas are the same for every agent, so they stay cacheable; what each signal means for this agent's segment (`rules.signals`) is in the user message.
 
 ## Logic
 | Module | Job |
 |---|---|
-| `seed` | Load `agents.json`. Build a power-law follow graph between agents. Add the room's starter posts, each by a different active agent whose stance matches the post's side. Give each new member 100 random agent followers. |
-| `roundEngine` | Every 15s: skip if the previous round is still running, then run the steps below and increment `round`. Runs only while some human post is not final yet: starts on a member's post, stops when the last one is final (saves API budget). Stops for the day at a daily request cap (config). |
-| `feedBuilder` | Build each agent's 12-post feed (follows / exploration / `rank`). Drop posts older than 4 rounds. |
-| `sessionRunner` | One Haiku request per agent. Shared rules and tools first (prompt cache), then persona, stance and feed. Post text is wrapped as data. 10s timeout. |
-| `applyEvents` | Validate tool calls (post must be in that agent's feed, max 3 replies), append events, update counts, follows and stance. |
-| `scorer` | Add points per PRODUCT.md. Check Persuasion / Backlash from `end_session`. |
-| `finalizer` | Mark posts that have been through 4 rounds as final and queue them for feedback. |
-| `feedbackWorker` | One Sonnet request per finalized human post, built from its events. 30 in parallel. |
+| `seed` | Load the room's `agents.json`. Build the power-law follow graph (power tier first, then the PRODUCT.md extras). Add the room's starter posts. Give each new member 100 random crowd followers. |
+| `roundEngine` | Every 15s: skip if the previous round is still running, then run the steps below and increment `round`. Runs only while some pitch is not final yet: starts on a member's pitch, stops when the last one is final (saves API budget). Stops for the day at a daily request cap (config). |
+| `feedBuilder` | Build each agent's 12-post feed (follows / pitch slots / exploration / `rank`). Pitch slots pick unseen pitches, least-seen first, from a per-round viewer set that grows as feeds are built, so pitches rotate across agents. Drop posts older than 4 rounds. Add each viewer to the pitch's `seenBy`. |
+| `sessionRunner` | One Haiku request per agent, three-layer prompt (above). Post text is wrapped as data. 10s timeout. |
+| `applyEvents` | Validate tool calls: post must be in that agent's feed; max 3 replies; signals only on pitches, max 2, one per kind per agent and pitch, `reason` cut to 20 words. Append events, update counts and follows. |
+| `scorer` | Add points per PRODUCT.md: engagement by the acting agent's tier, intent by its segment, objections 0 (`pointsFor`). The score is the sum. |
+| `finalizer` | Mark posts that have been through 4 rounds as final and queue pitches for feedback. |
+| `scorecard` | Pure function: the feedback numbers (views, reach, reaction rate, and per segment: saw, reacted, intent, objection) from a pitch's events and `seenBy`. Used by the Dashboard and fed to feedback. |
+| `feedbackWorker` | One Sonnet request per finalized pitch: market context + pitch + scorecard + its events → forced tool returning `{ verdict, landedWith, objections[3], improvements, rewrite, nextStep }`. 30 in parallel. |
 | `broadcaster` | Tell everyone in the room to refetch (throttled to one push per second), and push notifications and feedback-ready to each member. |
 
 **API**
-- `POST /api/rooms/:id/join` → member id (nickname)
-- `POST /api/rooms/:id/posts` → checks length, word filter, 5s cooldown per member
-- `GET /api/rooms/:id` → current state (on page load)
+- The home page reads the market list from `markets.ts` directly (server component), so there is no markets API.
+- `POST /api/rooms/:id/join` → member id (nickname). `404` for any id but the open market's (so `coming_soon` markets cannot be joined).
+- `POST /api/rooms/:id/posts` → pitch. Checks length, word filter, 5s cooldown per member.
+- `GET /api/rooms/:id` → current state (on page load).
 - `/admin` (`ADMIN_TOKEN`): status, pause, resume, reset room. Agent count is set with `AGENT_COUNT` + reset.
+
+## UI
+| Screen | Content |
+|---|---|
+| **Home** | One card per market. The open one links to its room; `coming_soon` ones are greyed out and not clickable. No room creation. |
+| **Timeline** | Market header (name + one-line summary), the live feed and the pitch composer. Pitches carry a "Pitch" badge. |
+| **Dashboard** | Counts (agents, people, pitches, reactions), the audience by type, and the leaderboard of pitches. Tap a row for the full text, the scorecard and the breakdown (count and points per type). |
+| **My Pitches** | Each of my pitches with its score, scorecard, activity log (who did what, with signal reasons; signals are visible only to the author), and feedback once final. Tab badge for unread reactions. |
+
+Every scorecard and report shows the label "Simulated audience. Use it to decide what to test for real."

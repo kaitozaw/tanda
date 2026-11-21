@@ -45,8 +45,8 @@ export function notifyMembers(notifications: Notification[]) {
     byMember.set(n.memberId, list);
   }
   for (const [memberId, list] of byMember) {
-    // Replies and persuasion first: they are the interesting ones.
-    const order = ["persuasion", "reply", "repost", "follow", "backlash", "unfollow", "neutralShift", "like"];
+    // Signals and interest shifts first: they are what a founder wants to know.
+    const order = ["intent", "objection", "reply", "repost", "follow", "unfollow", "like"];
     list.sort((a, b) => order.indexOf(a.type) - order.indexOf(b.type));
     io()?.to(memberChannel(memberId)).emit("notify", { items: list.slice(0, 4), total: list.length });
   }

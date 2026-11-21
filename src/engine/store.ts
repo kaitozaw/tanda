@@ -4,14 +4,8 @@ import type { RoundEngine } from "./roundEngine";
 import { config, rules } from "./config";
 
 export const emptyCounts = (): Counts => ({
-  like: 0,
-  repost: 0,
-  reply: 0,
-  follow: 0,
-  unfollow: 0,
-  persuasion: 0,
-  backlash: 0,
-  neutralShift: 0,
+  like: 0, repost: 0, reply: 0, follow: 0, unfollow: 0,
+  intent: 0, objection: 0,
   impressions: 0,
 });
 
@@ -26,7 +20,6 @@ export interface Snapshot {
 export class Store {
   room: RoomState = {
     id: rules.roomId,
-    topic: rules.topic,
     round: 0,
     paused: false,
     running: false,
@@ -53,13 +46,13 @@ export class Store {
     return 0;
   }
 
-  author(post: Post): { handle: string; name: string } {
+  author(post: Post): { handle: string; name: string; role: string } {
     if (post.authorType === "member") {
       const m = this.members.get(post.authorId);
-      return { handle: m?.handle ?? "unknown", name: m?.nickname ?? "Unknown" };
+      return { handle: m?.handle ?? "unknown", name: m?.nickname ?? "Unknown", role: "" };
     }
     const a = this.agents.get(post.authorId);
-    return { handle: a?.handle ?? "unknown", name: a?.persona.name ?? "Unknown" };
+    return { handle: a?.handle ?? "unknown", name: a?.persona.name ?? "Unknown", role: a?.persona.role ?? "" };
   }
 
   addPost(post: Post) {
@@ -83,6 +76,11 @@ export class Store {
 
   activePosts(): Post[] {
     return this.postOrder.map((id) => this.posts.get(id)!).filter((p) => !p.finalized);
+  }
+
+  /** Member posts (pitches) in creation order. */
+  pitches(): Post[] {
+    return this.postOrder.map((id) => this.posts.get(id)!).filter((p) => p.authorType === "member");
   }
 
   hasPendingHumanPosts(): boolean {

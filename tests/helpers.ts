@@ -1,25 +1,26 @@
 import { Store, emptyCounts } from "@/engine/store";
-import type { Agent, Post, Side } from "@/engine/types";
+import type { Agent, AgentType, Persona, Post } from "@/engine/types";
 
-export function makeAgent(id: string, stance = 50, extra: Partial<Agent> = {}): Agent {
+export function makeAgent(id: string, type: AgentType = "customer", extra: Partial<Agent> = {}, persona: Partial<Persona> = {}): Agent {
   return {
     id,
     handle: id,
-    stance,
     followingIds: [],
     followerIds: [],
     persona: {
-      name: id, age: 30, region: "Sydney, NSW", role: "teacher", segment: "Teachers & educators",
-      leaning: "centre", interests: [], activity: 0.5, openness: 0.5, bio: "",
+      market: "au", name: id, age: 30, region: "Sydney, NSW", tier: type === "customer" ? "crowd" : "power", type,
+      role: "cafe owner", group: type === "customer" ? "Small business owners" : "Seed angels", priorities: ["cash flow"],
+      adoption: 0.5, priceSensitivity: 0.5, scepticism: 0.5, activity: 0.5, openness: 0.5, bio: "",
+      ...persona,
     },
     ...extra,
   };
 }
 
-export function makePost(id: string, authorId: string, side: Side = "for", extra: Partial<Post> = {}): Post {
+export function makePost(id: string, authorId: string, extra: Partial<Post> = {}): Post {
   return {
-    id, authorType: "member", authorId, text: "hello", side, createdAt: Date.now(), createdRound: 0,
-    roundsSeen: 0, counts: emptyCounts(), points: 0, finalized: false, feedback: null, feedbackStatus: "none",
+    id, authorType: "member", authorId, text: "hello", createdAt: Date.now(), createdRound: 0, roundsSeen: 0, seenBy: [],
+    counts: emptyCounts(), points: 0, finalized: false, feedback: null, feedbackStatus: "none",
     ...extra,
   };
 }

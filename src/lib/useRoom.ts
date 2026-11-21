@@ -9,17 +9,23 @@ export interface Toast {
   body: string | null;
 }
 
-interface NotifyItem { type: string; handle: string; text: string | null }
+interface NotifyItem { type: string; handle: string; segment: string; text: string | null }
 
 const VERB: Record<string, string> = {
-  like: "liked your post",
-  repost: "reposted your post",
+  like: "liked your pitch",
+  repost: "reposted your pitch",
   reply: "replied",
   follow: "followed you",
   unfollow: "unfollowed you",
-  persuasion: "changed their mind because of your post",
-  backlash: "was pushed away by your post",
-  neutralShift: "rethought their view after your post",
+  objection: "raised an objection",
+};
+/** What an intent means per segment. */
+const INTENT_VERB: Record<string, string> = {
+  customer: "would pay for it",
+  investor: "wants a meeting",
+  industry_lead: "wants to partner",
+  regulator: "supports it",
+  media: "would cover it",
 };
 
 export function useRoom(roomId: string) {
@@ -86,11 +92,11 @@ export function useRoom(roomId: string) {
     socket.on("refresh", () => void setTimeout(() => void refresh(), Math.random() * 500));
     socket.on("feedback", () => {
       void refresh();
-      pushToast("Your feedback is ready", "Open My Posts to see it.");
+      pushToast("Your feedback is ready", "Open My Pitches to see it.");
     });
     socket.on("notify", ({ items, total }: { items: NotifyItem[]; total: number }) => {
       setUnread((u) => u + total);
-      items.slice(0, 2).forEach((n) => pushToast(`@${n.handle} ${VERB[n.type] ?? n.type}`, n.text));
+      items.slice(0, 2).forEach((n) => pushToast(`@${n.handle} ${n.type === "intent" ? INTENT_VERB[n.segment] : VERB[n.type] ?? n.type}`, n.text));
       if (total > 2) pushToast(`+${total - 2} more reactions`, null);
     });
     const poll = setInterval(() => void refresh(), 20000); // safety net if the socket drops
@@ -119,14 +125,14 @@ export function useRoom(roomId: string) {
     setMemberId(data.memberId);
   }
 
-  async function post(text: string, side: string) {
+  async function post(text: string) {
     const res = await fetch(`/api/rooms/${roomId}/posts`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ memberId, text, side }),
+      body: JSON.stringify({ memberId, text }),
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error ?? "Could not post");
+    if (!res.ok) throw new Error(data.error ?? "Could not pitch");
     await refresh();
   }
 
