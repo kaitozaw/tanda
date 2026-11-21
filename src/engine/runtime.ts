@@ -6,6 +6,7 @@ import { broadcastRefresh } from "./broadcaster";
 import { startScheduler } from "./scheduler";
 import { config } from "./config";
 import type { RoomInput } from "./types";
+import { DEFAULT_ROOM, DEFAULT_ROOM_ID } from "./defaultRoom";
 
 const g = globalThis as { __building?: Set<string> };
 const building = (g.__building ??= new Set());
@@ -30,15 +31,18 @@ function startBuild(room: Room) {
 
 /** Boot once per process: restore every room from Postgres, resume unfinished builds, start the scheduler. */
 export async function boot() {
-  for (const snap of await loadAll()) {
+  const snaps = await loadAll();
+  for (const snap of snaps) {
     const room = register(Store.restore(snap));
     if (room.store.room.status === "generating") startBuild(room);
     // Pitches that were waiting for feedback when the process stopped.
     room.engine.feedback.enqueue([...room.store.posts.values()].filter((p) => p.feedbackStatus === "pending"));
   }
+  const createDemo = config.defaultRoom && !sim.rooms.has(DEFAULT_ROOM_ID);
+  if (createDemo) createRoom(DEFAULT_ROOM, DEFAULT_ROOM_ID);
   startScheduler();
   console.log(
-    `sim ready: ${sim.rooms.size} rooms restored, ${config.agentCount} agents per new room, ` +
+    `sim ready: ${snaps.length} rooms restored${createDemo ? `, demo room ${DEFAULT_ROOM_ID} created` : ""}, ${config.agentCount} agents per new room, ` +
       `${config.fakeLlm ? "FAKE_LLM" : `models ${config.agentModel} / ${config.feedbackModel}`}`,
   );
 }
@@ -52,11 +56,10 @@ const slug = (title: string) => {
 };
 
 /** Create a room and start building its audience. Throws if MAX_ROOMS is reached. */
-export function createRoom(input: RoomInput): Room {
+export function createRoom(input: RoomInput, fixedId?: string): Room {
   if (sim.rooms.size >= config.maxRooms) throw new Error("Room limit reached");
-  let id: string;
-  do id = `${slug(input.title)}-${Math.random().toString(36).slice(2, 6)}`;
-  while (sim.rooms.has(id));
+  let id = fixedId ?? "";
+  while (!id || sim.rooms.has(id)) id = `${slug(input.title)}-${Math.random().toString(36).slice(2, 6)}`;
   const room = register(new Store(newRoomState(id, input)));
   startBuild(room);
   return room;

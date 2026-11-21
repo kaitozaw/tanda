@@ -1,6 +1,8 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { DEFAULT_ROOM, DEFAULT_ROOM_ID } from "@/engine/defaultRoom";
 
 const KINDS = [
   ["product", "Product", "A new product or startup idea"],
@@ -19,6 +21,12 @@ export default function Home() {
   const [link, setLink] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [demo, setDemo] = useState(false);
+
+  // Only show the demo room if the server created it (DEFAULT_ROOM=0 turns it off).
+  useEffect(() => {
+    fetch(`/api/rooms/${DEFAULT_ROOM_ID}`, { cache: "no-store" }).then((r) => setDemo(r.ok)).catch(() => {});
+  }, []);
 
   async function create(e: React.FormEvent) {
     e.preventDefault();
@@ -54,6 +62,14 @@ export default function Home() {
           Test your idea on 1,000 AI stakeholders before you spend a dollar on it. Customers, investors, industry and regulators react in one minute.
         </p>
       </header>
+
+      {demo && (
+        <Link href={`/rooms/${DEFAULT_ROOM_ID}`} className="block border-b border-line px-4 py-4 transition hover:bg-white/[0.03]">
+          <div className="text-[13px] text-repost">● Demo room · Decision</div>
+          <div className="font-bold">{DEFAULT_ROOM.title}</div>
+          <div className="text-sm text-muted">Pitch it to parents, teens, platforms, regulators and media</div>
+        </Link>
+      )}
 
       <form onSubmit={create} className="space-y-4 px-4 py-6">
         <h2 className="text-xl font-extrabold">Test an idea</h2>

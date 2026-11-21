@@ -19,6 +19,8 @@ export const config = {
   maxActiveRooms: num(process.env.MAX_ACTIVE_ROOMS, 3),
   /** Rooms kept in total (memory and snapshot size). */
   maxRooms: num(process.env.MAX_ROOMS, 20),
+  /** Create the demo room (defaultRoom.ts) on boot if it does not exist. */
+  defaultRoom: process.env.DEFAULT_ROOM !== "0",
   fakeLlm: process.env.FAKE_LLM === "1" || !hasLlmKey(),
   adminToken: process.env.ADMIN_TOKEN ?? "",
   databaseUrl: process.env.DATABASE_URL ?? "",

@@ -7,13 +7,13 @@
 - The demo uses one room, created **live on stage** from the home page:
   - Title: **"Australia's under-16 social media ban"**
   - Kind: `decision`. Region: Australia.
-  - Description: what the ban does, who it affects and how it is enforced (≤600 chars, written and rehearsed beforehand).
+  - Description: what the ban does, who it affects and how it is enforced. The rehearsed text lives in `src/engine/defaultRoom.ts`; paste the same text on stage.
 - The audience (~100 people) plays policy advisers. Each writes a pitch to win support for the ban from the people it affects and the people with power over it. Everyone is in the same room, so the leaderboard works as a 100-way A/B test of messaging.
 - The generated audience should include parents, teens, teachers and sceptics as the crowd, plus safety-tech investors, platform and telco execs, eSafety and education officials, and tech and parenting journalists as power holders. The power holders are what make this demo different from a poll.
 - Big screen and phones use the same responsive app. The big screen moves from the Timeline (while the audience builds) to the Dashboard. Phones are used to post and get notifications.
 
 ### Before the event
-- Create a **backup room** with the same inputs and check its audience plan (segments make sense, sceptics present, every power type filled). Keep its QR code ready.
+- The **backup room** is built in: `/rooms/au-u16-ban` is created on boot with the same inputs (`src/engine/defaultRoom.ts`). Check its audience plan (segments make sense, sceptics present, every power type filled) and keep its QR code ready.
 - Rehearse with `npm run simulate`, check the rate limit, and set `MAX_ACTIVE_ROOMS` / `AGENT_COUNT` (see [PERFORMANCE.md](PERFORMANCE.md)).
 - Run a **sanity check**: post a deliberately weak pitch (vague, preachy) in the backup room. It should score low and collect objections. If it does well, tighten the realism rules in the agent prompt before the demo.
 

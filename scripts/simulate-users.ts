@@ -4,9 +4,10 @@
  * refetches the room on every push, like a real phone, so this measures the fan-out load too.
  *   npm run simulate -- --users 150 --seconds 5
  *   npm run simulate -- --rooms 3 --users 50 --seconds 10
- *   npm run simulate -- --room <existing-room-id> --users 100
+ *   npm run simulate -- --room au-u16-ban --users 100     (the demo room)
  */
 import { io, type Socket } from "socket.io-client";
+import { DEFAULT_ROOM } from "../src/engine/defaultRoom";
 
 const arg = (name: string, d: string) => {
   const i = process.argv.indexOf(`--${name}`);
@@ -18,14 +19,7 @@ const SECONDS = Number(arg("seconds", "60"));
 const ROOMS = Number(arg("rooms", "1"));
 const ROOM = arg("room", "");
 
-const IDEA = {
-  title: "Australia's under-16 social media ban",
-  kind: "decision",
-  region: "Australia",
-  description:
-    "Australia bans under-16s from holding accounts on major social media platforms. Platforms must take reasonable steps to verify age or face fines up to $49.5M. Parents cannot consent on a child's behalf. Messaging, gaming and education apps are exempt.",
-  targetHint: "Parents of children aged 10-15",
-};
+const IDEA = DEFAULT_ROOM;
 
 const SAMPLES = [
   "Teen anxiety rates doubled in a decade. The ban gives kids their childhood back and puts the burden on billion-dollar platforms, not parents.",
