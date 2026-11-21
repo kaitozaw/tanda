@@ -23,7 +23,7 @@ export async function boot() {
   );
 }
 
-/** Admin reset: wipe members, posts and events, then re-seed agents (stance and follows) and starter posts. */
+/** Admin reset: wipe members, posts and events, then re-seed agents (follow graph) and starter posts. */
 export async function reset() {
   const store = sim.store;
   const fresh = new Store();

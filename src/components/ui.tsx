@@ -1,15 +1,77 @@
 import type { PostView } from "@/engine/views";
+import type { Scorecard } from "@/engine/types";
 
-export const SIDE_STYLE: Record<string, string> = {
-  for: "border-repost/40 text-repost",
-  against: "border-like/40 text-like",
-  neutral: "border-line text-muted",
-};
-export const SIDE_LABEL: Record<string, string> = { for: "For the ban", against: "Against the ban", neutral: "Neutral" };
-
-export function SideBadge({ side }: { side: string }) {
-  return <span className={`rounded-full border px-2 py-px text-xs ${SIDE_STYLE[side]}`}>{SIDE_LABEL[side]}</span>;
+export function PitchBadge() {
+  return <span className="rounded-full border border-accent/40 px-2 py-px text-xs text-accent">Pitch</span>;
 }
+
+export const TYPE_LABEL: Record<string, string> = {
+  customer: "Customers",
+  investor: "Investors",
+  industry_lead: "Industry",
+  regulator: "Regulators",
+  media: "Media",
+};
+
+export const pct = (x: number) => `${(x * 100).toFixed(1)}%`;
+
+/** What an intent means per segment, short (PRODUCT.md → Scoring). */
+export const INTENT_LABEL: Record<string, string> = {
+  customer: "would pay",
+  investor: "want a meeting",
+  industry_lead: "would partner",
+  regulator: "would support",
+  media: "would cover",
+};
+
+/** A pitch's scorecard: reach, then one row per segment (Dashboard row and My Pitches). */
+export function ScorecardGrid({ s }: { s: Scorecard }) {
+  const intents = s.segments.reduce((n, g) => n + g.intent, 0);
+  const objections = s.segments.reduce((n, g) => n + g.objection, 0);
+  return (
+    <div className="overflow-hidden rounded-xl border border-line">
+      <div className="grid grid-cols-3 text-center">
+        {[
+          ["Reach", compact(s.reach), `${pct(s.reactionRate)} reacted`],
+          ["Intent", String(intents), "people"],
+          ["Objections", String(objections), "people"],
+        ].map(([label, value, sub], i) => (
+          <div key={label} className={`px-1 py-2 ${i ? "border-l border-line" : ""}`}>
+            <div className="text-[12px] text-muted">{label}</div>
+            <div className="text-lg font-extrabold tabular-nums">{value}</div>
+            <div className="text-[11px] leading-tight text-muted">{sub}</div>
+          </div>
+        ))}
+      </div>
+      <table className="w-full border-t border-line text-left text-[13px]">
+        <thead className="text-muted">
+          <tr>
+            <th className="py-1 pl-3 font-normal">Segment</th>
+            <th className="font-normal">Saw</th>
+            <th className="font-normal">Reacted</th>
+            <th className="font-normal">Intent</th>
+            <th className="pr-3 font-normal">Objection</th>
+          </tr>
+        </thead>
+        <tbody>
+          {s.segments.map((g) => (
+            <tr key={g.segment} className={`border-t border-line ${g.seen ? "" : "text-muted"}`}>
+              <td className="py-1 pl-3">{TYPE_LABEL[g.segment]}</td>
+              <td className="tabular-nums">{g.seen}</td>
+              <td className="tabular-nums">{g.reacted}</td>
+              <td className="tabular-nums">
+                <span className={g.intent ? "font-bold text-repost" : ""}>{g.intent}</span> <span className="text-[11px] text-muted">{INTENT_LABEL[g.segment]}</span>
+              </td>
+              <td className={`pr-3 tabular-nums ${g.objection ? "font-bold text-like" : ""}`}>{g.objection}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+export const SIM_LABEL = "Simulated audience. Use it to decide what to test for real.";
 
 export const simLabel = (rounds: number, perRound = 15) => {
   const m = rounds * perRound;
@@ -28,7 +90,6 @@ export const IconReply = () => <Svg d="M4 12a8 8 0 0 1 8-8h1a7 7 0 0 1 0 14h-2l-
 export const IconRepost = () => <Svg d="M7 7h10l-3-3M17 17H7l3 3M17 7v6M7 17v-6" />;
 export const IconLike = () => <Svg d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z" />;
 export const IconViews = () => <Svg d="M5 20V10M10 20V4M15 20v-7M20 20v-4" />;
-export const IconPersuade = () => <Svg d="M7 17L17 7M9 7h8v8" />;
 
 /** `me` adds a blue ring: only the viewer's own avatar has it. */
 export function Avatar({ name, me, size = 40 }: { name: string; me?: boolean; size?: number }) {
@@ -56,7 +117,7 @@ export function Progress({ post, roundsToFinal }: { post: PostView; roundsToFina
   );
 }
 
-/** X-style action row: replies, reposts, likes, persuaded, views. */
+/** X-style action row: replies, reposts, likes, views. Signals are private, so not shown here. */
 export function Actions({ post }: { post: PostView }) {
   const c = post.counts;
   const item = (icon: React.ReactNode, n: number, hover: string, title: string) => (
@@ -70,7 +131,6 @@ export function Actions({ post }: { post: PostView }) {
       {item(<IconReply />, c.reply, "hover:text-accent", "replies")}
       {item(<IconRepost />, c.repost, "hover:text-repost", "reposts")}
       {item(<IconLike />, c.like, "hover:text-like", "likes")}
-      {item(<IconPersuade />, c.persuasion, "hover:text-repost", "persuaded")}
       {item(<IconViews />, c.impressions, "hover:text-accent", "views")}
     </div>
   );
@@ -90,8 +150,8 @@ export function PostCard({ post, roundsToFinal, mine }: { post: PostView; rounds
               <path d="M8.5 12.5l2.3 2.2 4.7-5" stroke="#000" strokeWidth={2} fill="none" strokeLinecap="round" />
             </svg>
           )}
-          <span className="truncate text-muted">@{post.handle}</span>
-          <SideBadge side={post.side} />
+          <span className="truncate text-muted">@{post.handle}{post.role ? ` · ${post.role}` : ""}</span>
+          {human && <PitchBadge />}
         </header>
         <p className="mt-0.5 whitespace-pre-wrap break-words text-[15px] leading-5">{post.text}</p>
         <Actions post={post} />

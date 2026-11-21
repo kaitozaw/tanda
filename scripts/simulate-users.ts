@@ -1,5 +1,5 @@
 /**
- * Rehearsal / load test: N fake members open the room, join and post over a time window.
+ * Rehearsal / load test: N fake members open the room, join and pitch over a time window.
  * Each one keeps a socket open and refetches the room on every push, like a real phone, so this
  * measures the fan-out load too, not just the POSTs.
  *   npm run simulate -- --users 150 --seconds 5 --url http://localhost:3000
@@ -13,24 +13,16 @@ const arg = (name: string, d: string) => {
 const URL_BASE = arg("url", "http://localhost:3000");
 const USERS = Number(arg("users", "100"));
 const SECONDS = Number(arg("seconds", "60"));
-const ROOM = arg("room", "au-u16-ban");
+const ROOM = arg("room", "au");
 
-const SAMPLES = {
-  for: [
-    "Teen anxiety rates doubled in a decade. The ban gives kids their childhood back. Who's with me?",
-    "Parents can't fight billion-dollar algorithms alone. The ban finally puts the burden on tech companies.",
-    "My daughter deleted Instagram for a month and slept better than she had in years. The ban is worth it.",
-  ],
-  against: [
-    "Banning under-16s won't stop them, it just pushes them to darker corners of the internet with zero moderation.",
-    "Age verification means every Aussie handing ID to tech giants. Is that really safer?",
-    "For queer kids in small towns, online communities are a lifeline. The ban cuts it.",
-  ],
-  neutral: [
-    "Honest question: has anyone seen real data on whether the ban is working?",
-    "The ban isn't the whole answer. Digital literacy in schools matters just as much.",
-  ],
-};
+const SAMPLES = [
+  "Rostr: rosters for cafes in 2 taps. Staff swap shifts themselves, you approve. $19/month per venue, first month free.",
+  "Tired of chasing invoices? PaidUp texts your clients a pay link and nudges them until they pay. Built for tradies. $9/month.",
+  "LunchBox plans a week of school lunches from what's already in your fridge and cuts the shopping list. Free for 3 kids.",
+  "SplitHouse: one place for share-house rent, bills and groceries. Auto-splits, reminds, settles. $2/month each.",
+  "GrandLink: a tablet app with 4 big buttons so grandparents can video call, see photos and get reminders. $49 one-off.",
+  "Rural Clinic Online: bulk-billed telehealth GPs with offline-first booking for patchy connections. Free with Medicare.",
+];
 
 const getMs: number[] = [];
 const postMs: number[] = [];
@@ -78,13 +70,11 @@ async function user(i: number, sockets: Socket[]) {
       body: JSON.stringify({ nickname: `tester${i}` }),
     }).then((r) => r.json());
     memberId = join.memberId;
-    const side = (["for", "against", "neutral"] as const)[i % 3];
-    const list = SAMPLES[side];
     const t = Date.now();
     const res = await fetch(`${URL_BASE}/api/rooms/${ROOM}/posts`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ memberId, side, text: list[i % list.length] }),
+      body: JSON.stringify({ memberId, text: SAMPLES[i % SAMPLES.length] }),
     });
     postMs.push(Date.now() - t);
     if (!res.ok) {

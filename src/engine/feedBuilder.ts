@@ -13,13 +13,16 @@ export function rank(post: Post): number {
 export function prepare(pool: Post[], repostsByPost: Map<string, string[]>, rand = Math.random) {
   const ranked = [...pool].sort((a, b) => rank(b) - rank(a));
   const fresh = pool.filter((p) => p.roundsSeen === 0);
-  return { pool, ranked, fresh, repostsByPost, rand };
+  const pitches = pool.filter((p) => p.authorType === "member");
+  /** Who has seen each pitch. The round engine adds viewers while it builds feeds. */
+  const seen = new Map(pitches.map((p) => [p.id, new Set(p.seenBy)]));
+  return { pool, ranked, fresh, pitches, seen, repostsByPost, rand };
 }
 
 export type Prepared = ReturnType<typeof prepare>;
 
 export function buildFeed(agent: Agent, ctx: Prepared): FeedItem[] {
-  const { follows, recommended, exploration } = rules.feed;
+  const { follows, recommended, exploration, pitches } = rules.feed;
   const following = new Set(agent.followingIds);
   const chosen = new Set<string>();
   const items: FeedItem[] = [];
@@ -47,7 +50,20 @@ export function buildFeed(agent: Agent, ctx: Prepared): FeedItem[] {
       chosen.add(it.post.id);
     });
 
-  // 2. Exploration: random brand-new posts, so new posts always get some reach.
+  // 2. Pitch slots (like ad slots): pitches this agent has not seen yet, least-seen first, so every
+  // pitch reaches a fair share of the room whatever its engagement. `seen` grows while the round's
+  // feeds are built (roundEngine), so consecutive agents get different pitches.
+  ctx.pitches
+    .filter((p) => !chosen.has(p.id) && !ctx.seen.get(p.id)!.has(agent.id))
+    .map((p) => ({ p, key: ctx.seen.get(p.id)!.size + ctx.rand() }))
+    .sort((a, b) => a.key - b.key)
+    .slice(0, pitches)
+    .forEach(({ p }) => {
+      items.push({ post: p, viaId: null });
+      chosen.add(p.id);
+    });
+
+  // 3. Exploration: random brand-new posts, so new posts always get some reach.
   const fresh = ctx.fresh.filter((p) => !chosen.has(p.id) && !isOwn(p));
   for (let e = 0; e < exploration && fresh.length > 0; e++) {
     const i = Math.floor(ctx.rand() * fresh.length);
@@ -56,9 +72,9 @@ export function buildFeed(agent: Agent, ctx: Prepared): FeedItem[] {
     chosen.add(p.id);
   }
 
-  // 3. Recommended: best-ranked posts from accounts it does not follow. Also fills slots left
+  // 4. Recommended: best-ranked posts from accounts it does not follow. Also fills slots left
   // empty above, so a feed is full whenever there are enough posts.
-  const total = follows + recommended + exploration;
+  const total = follows + recommended + exploration + pitches;
   for (const p of ctx.ranked) {
     if (items.length >= total) break;
     if (chosen.has(p.id) || isOwn(p) || following.has(p.authorId)) continue;

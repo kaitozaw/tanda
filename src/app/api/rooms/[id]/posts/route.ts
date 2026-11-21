@@ -4,23 +4,18 @@ import { rules } from "@/engine/config";
 import { isBlocked } from "@/engine/moderation";
 import { broadcastRefresh } from "@/engine/broadcaster";
 import { saveSoon } from "@/engine/persist";
-import type { Side } from "@/engine/types";
 
 export const dynamic = "force-dynamic";
-
-const SIDES: Side[] = ["for", "against", "neutral"];
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const store = getStore();
   if (id !== store.room.id) return NextResponse.json({ error: "Room not found" }, { status: 404 });
-  const body = (await req.json().catch(() => ({}))) as { memberId?: unknown; text?: unknown; side?: unknown };
+  const body = (await req.json().catch(() => ({}))) as { memberId?: unknown; text?: unknown };
   const member = typeof body.memberId === "string" ? store.members.get(body.memberId) : undefined;
   if (!member) return NextResponse.json({ error: "Join the room first" }, { status: 401 });
   const text = typeof body.text === "string" ? body.text.trim() : "";
-  const side = SIDES.includes(body.side as Side) ? (body.side as Side) : null;
-  if (!side) return NextResponse.json({ error: "Pick a side" }, { status: 400 });
-  if (!text) return NextResponse.json({ error: "Write something first" }, { status: 400 });
+  if (!text) return NextResponse.json({ error: "Write your pitch first" }, { status: 400 });
   if (text.length > rules.maxPostChars) return NextResponse.json({ error: `Max ${rules.maxPostChars} characters` }, { status: 400 });
   if (isBlocked(text)) return NextResponse.json({ error: "Please keep it clean, it goes on the big screen" }, { status: 400 });
   const wait = store.takePostSlot(member.id);
@@ -31,10 +26,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     authorType: "member",
     authorId: member.id,
     text,
-    side,
     createdAt: Date.now(),
     createdRound: store.room.round,
     roundsSeen: 0,
+    seenBy: [],
     counts: emptyCounts(),
     points: 0,
     finalized: false,

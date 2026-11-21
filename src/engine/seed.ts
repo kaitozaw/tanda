@@ -1,13 +1,14 @@
 import fs from "node:fs";
 import path from "node:path";
-import type { Agent, Member, Side } from "./types";
+import type { Agent, AgentType, Member } from "./types";
 import { Store, emptyCounts } from "./store";
-import { sideFromStance } from "./applyEvents";
 import { rules } from "./config";
 
-type AgentSeed = Pick<Agent, "id" | "handle" | "stance" | "persona">;
+type AgentSeed = Pick<Agent, "id" | "handle" | "persona">;
 
-export function loadAgentSeeds(file = path.resolve("data/agents.json")): AgentSeed[] {
+/** The room's personas, from data/rooms/<roomId>/agents.json (scripts/generate-agents.ts). */
+export function loadAgentSeeds(roomId: string, dir = path.resolve("data/rooms")): AgentSeed[] {
+  const file = path.join(dir, roomId, "agents.json");
   return JSON.parse(fs.readFileSync(/*turbopackIgnore: true*/ file, "utf8")) as AgentSeed[];
 }
 
@@ -43,7 +44,29 @@ export function buildFollowGraph(agents: Agent[], m = 8, seed = 42) {
   });
 }
 
-export function seedAgents(store: Store, seeds = loadAgentSeeds()) {
+/** a follows b (no self-follows, no duplicates). */
+export function follow(a: Agent, b: Agent) {
+  if (a.id === b.id || a.followingIds.includes(b.id)) return;
+  a.followingIds.push(b.id);
+  b.followerIds.push(a.id);
+}
+
+/**
+ * Power accounts go first in the power law so they collect the most followers (shuffled within each
+ * tier). Then media follow everyone in the power tier and investors follow industry leads.
+ */
+export function connectAgents(agents: Agent[], seed = 7) {
+  const rand = rng(seed);
+  const power = agents.filter((a) => a.persona.tier === "power").sort(() => rand() - 0.5);
+  const crowd = agents.filter((a) => a.persona.tier === "crowd").sort(() => rand() - 0.5);
+  buildFollowGraph([...power, ...crowd]);
+  for (const a of power) {
+    if (a.persona.type === "media") for (const b of power) follow(a, b);
+    if (a.persona.type === "investor") for (const b of power) if (b.persona.type === "industry_lead") follow(a, b);
+  }
+}
+
+export function seedAgents(store: Store, seeds = loadAgentSeeds(store.room.id)) {
   store.agents.clear();
   // Seed all personas; AGENT_COUNT caps how many the engine uses (Store.activeAgents).
   const agents: Agent[] = seeds.map((s) => ({
@@ -52,14 +75,11 @@ export function seedAgents(store: Store, seeds = loadAgentSeeds()) {
     followingIds: [],
     followerIds: [],
   }));
-  // Shuffle order before building the graph so influencers are spread across segments.
-  const rand = rng(7);
-  const order = [...agents].sort(() => rand() - 0.5);
-  buildFollowGraph(order);
+  connectAgents(agents);
   for (const a of agents) store.agents.set(a.id, a);
 }
 
-type PostSeed = { side: Side; text: string };
+type PostSeed = { type: AgentType; text: string };
 
 /** Starter posts for a room, from data/rooms/<roomId>/posts.json. No file = no starter posts. */
 export function loadPostSeeds(roomId: string, dir = path.resolve("data/rooms")): PostSeed[] {
@@ -69,16 +89,16 @@ export function loadPostSeeds(roomId: string, dir = path.resolve("data/rooms")):
 }
 
 /**
- * Put the room's starter posts on the timeline, so it is not empty before anyone posts. Each one
- * gets an active agent whose current stance is on the post's side (deterministic, one post per
- * agent), and they are spaced a few minutes apart, oldest first.
+ * Put the room's starter posts on the timeline, so it is not empty before anyone pitches. Each one
+ * gets an active agent of the post's type (deterministic, one post per agent), and they are spaced
+ * a few minutes apart, oldest first.
  */
 export function seedPosts(store: Store, seeds = loadPostSeeds(store.room.id), now = Date.now()) {
   const rand = rng(11);
   const used = new Set<string>();
   const agents = store.activeAgents();
   seeds.forEach((s, i) => {
-    const pool = agents.filter((a) => sideFromStance(a.stance) === s.side && !used.has(a.id));
+    const pool = agents.filter((a) => a.persona.type === s.type && !used.has(a.id));
     if (pool.length === 0) return;
     const author = pool[Math.floor(rand() * pool.length)];
     used.add(author.id);
@@ -87,10 +107,10 @@ export function seedPosts(store: Store, seeds = loadPostSeeds(store.room.id), no
       authorType: "agent",
       authorId: author.id,
       text: s.text.slice(0, rules.maxPostChars),
-      side: s.side,
       createdAt: now - (seeds.length - i) * 3 * 60_000,
       createdRound: 0,
       roundsSeen: 0,
+      seenBy: [],
       counts: emptyCounts(),
       points: 0,
       finalized: false,
@@ -106,7 +126,7 @@ export function seedRoom(store: Store) {
   seedPosts(store);
 }
 
-/** Every member starts with exactly the same number of random agent followers (fairness). */
+/** Every member starts with exactly the same number of random crowd followers (fairness). */
 export function addMember(store: Store, nickname: string): Member {
   const id = `m${Date.now().toString(36)}${Math.floor(Math.random() * 1e6).toString(36)}`;
   const base = nickname.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 14) || "member";
@@ -117,9 +137,10 @@ export function addMember(store: Store, nickname: string): Member {
     followerIds: [],
     joinedAt: Date.now(),
   };
-  const ids = store.activeAgents().map((a) => a.id);
+  const active = store.activeAgents();
+  const ids = active.filter((a) => a.persona.tier === "crowd").map((a) => a.id);
   // 10% of the active agents (100 of 1,000), so new followers stay possible at small AGENT_COUNT.
-  const n = Math.max(1, Math.round((rules.memberStartFollowers * ids.length) / 1000));
+  const n = Math.min(ids.length, Math.max(1, Math.round((rules.memberStartFollowers * active.length) / 1000)));
   for (let i = 0; i < n; i++) {
     const j = i + Math.floor(Math.random() * (ids.length - i));
     [ids[i], ids[j]] = [ids[j], ids[i]];
