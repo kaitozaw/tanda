@@ -1,5 +1,5 @@
 import type { PostView } from "@/engine/views";
-import type { Scorecard } from "@/engine/types";
+import type { Feedback, Scorecard } from "@/engine/types";
 
 export function PitchBadge() {
   return <span className="rounded-full border border-accent/40 px-2 py-px text-xs text-accent">Pitch</span>;
@@ -72,6 +72,38 @@ export function ScorecardGrid({ s }: { s: Scorecard }) {
 }
 
 export const SIM_LABEL = "Simulated audience. Use it to decide what to test for real.";
+
+/** A pitch's AI feedback (My Pitches, and any pitch opened from the Dashboard leaderboard). */
+export function FeedbackCard({ fb }: { fb: Feedback }) {
+  return (
+    <div className="rounded-2xl border border-accent/40 bg-accent/5 p-4 text-[15px]">
+      <h3 className="font-extrabold text-accent">Feedback</h3>
+      <p className="mt-1">{fb.verdict}</p>
+      {fb.landedWith.length > 0 && (
+        <>
+          <h4 className="mt-3 font-bold">Who it landed with</h4>
+          <ul className="list-disc pl-5 text-ink/90">{fb.landedWith.map((x) => <li key={x}>{x}</li>)}</ul>
+        </>
+      )}
+      {fb.objections.length > 0 && (
+        <>
+          <h4 className="mt-3 font-bold">Top objections</h4>
+          <ul className="space-y-1 pl-5 text-ink/90">
+            {fb.objections.map((o) => <li key={o.theme + o.quote} className="list-disc"><span className="font-bold">{o.theme}</span>: “{o.quote}”</li>)}
+          </ul>
+        </>
+      )}
+      <h4 className="mt-3 font-bold">Improve</h4>
+      <ul className="list-disc pl-5 text-ink/90">{fb.improvements.map((x) => <li key={x}>{x}</li>)}</ul>
+      <h4 className="mt-3 font-bold">Try this pitch</h4>
+      <p className="mt-1 rounded-xl border border-line p-3">{fb.rewrite}</p>
+      <h4 className="mt-3 font-bold">Next step in the real world</h4>
+      <p className="mt-1">{fb.nextStep}</p>
+      <p className="mt-3 text-[12px] text-muted">{SIM_LABEL}</p>
+    </div>
+  );
+}
+
 
 export const simLabel = (rounds: number, perRound = 15) => {
   const m = rounds * perRound;

@@ -92,6 +92,8 @@ export interface Post {
   roundsSeen: number;
   /** Unique agents who had it in their feed. Pitches (member posts) only. */
   seenBy: string[];
+  /** New viewers per round (pitches only); the last entry sizes the next round's audience. */
+  audienceByRound?: number[];
   counts: Counts;
   points: number;
   finalized: boolean;
@@ -137,5 +139,4 @@ export interface SessionResult {
   follows: string[];
   unfollows: string[];
   signals: { postId: string; kind: SignalKind; reason: string }[];
-  post: string | null;
 }

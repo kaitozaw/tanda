@@ -54,6 +54,17 @@ export type EventView = ReturnType<typeof eventView>;
 
 const memberPosts = (store: Store) => store.pitches();
 
+/** A pitch's full results, public to everyone in the room: opened from the Dashboard leaderboard. */
+export function pitchDetail(store: Store, p: Post) {
+  return {
+    scorecard: computeScorecard(store, p),
+    breakdown: breakdown(store, p),
+    feedback: p.feedback,
+    feedbackStatus: p.feedbackStatus,
+  };
+}
+export type PitchDetail = ReturnType<typeof pitchDetail>;
+
 /** Agents the engine uses, per segment (the Dashboard's audience panel). */
 function audience(store: Store) {
   const agents = store.activeAgents();
@@ -64,7 +75,15 @@ export function roomView(store: Store, memberId: string | null) {
   const idle = sim.engine?.idleReason() ?? "starting";
   const timeline = store.postOrder.slice(-80).reverse().map((id) => postView(store, store.posts.get(id)!));
   const ranked = memberPosts(store).sort((a, b) => b.points - a.points);
-  const leaderboard = ranked.slice(0, 10).map((p) => ({ ...postView(store, p), nickname: store.author(p).name, scorecard: computeScorecard(store, p), breakdown: breakdown(store, p) }));
+  // Every pitch, kept light (it is refetched on every push): full results load when a row is opened.
+  const leaderboard = ranked.map((p) => ({
+    ...postView(store, p),
+    nickname: store.author(p).name,
+    reach: p.seenBy.length,
+    intent: p.counts.intent,
+    objection: p.counts.objection,
+    feedbackStatus: p.feedbackStatus,
+  }));
 
   const member = memberId ? store.members.get(memberId) : undefined;
   const me = member

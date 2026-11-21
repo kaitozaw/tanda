@@ -31,9 +31,14 @@ export const rules = {
   roomId: OPEN_MARKET.id,
   roundsToFinal: 4,
   simMinutesPerRound: 15,
-  postersPerRound: 25, // per 1,000 agents
   memberStartFollowers: 100, // per 1,000 agents (10%), crowd only
-  feed: { follows: 5, pitches: 2, exploration: 2, recommended: 3 }, // 12 slots
+  /** A feed is up to `maxPitches` pitches, filled to `size` with background (starter) posts. */
+  feed: { size: 12, maxPitches: 3 },
+  /**
+   * New viewers per pitch per round, per 1,000 agents (feedBuilder). Round 1: the author's followers
+   * + `seedRandom`. Later rounds: minNext..maxNext, linear in last round's reaction rate up to targetRate.
+   */
+  exposure: { seedRandom: 50, minNext: 20, maxNext: 300, targetRate: 0.3 },
   maxRepliesPerSession: 3,
   maxSignalsPerSession: 2,
   maxReasonWords: 20,
@@ -72,5 +77,4 @@ export const rules = {
       objection: { means: "why you would not cover it" },
     },
   } satisfies Record<Segment, { intent: { means: string; points: number }; objection: { means: string } }>,
-  rankWeights: { like: 1, repost: 3, reply: 6 },
 };
