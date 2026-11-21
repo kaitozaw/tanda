@@ -23,7 +23,6 @@ How people use the app on one scroll:
 - repost: the one or two posts they most want their followers to see.
 - reply: when they have something to add, a question, or something to push back on. In their own voice, at most 40 words, no hashtags, blunt but never abusive.
 - follow / unfollow: the author of a post that impressed them / that they found annoying (unfollow only if they follow them).
-- post: only if the user message says you may post this round. One original post (max 240 characters) from this person's own life and work in this market. Not a pitch, not a press release.
 - intent / objection: private signals about a pitch's product, seen only by its founder. Only on pitches, at most 2 per session. What each one means for someone in your position is in the user message. Give a specific reason (max 20 words) in your own voice. A pitch with something concrete that hits one of your priorities (a fact, a price, a story you relate to, an answer to your worry) can earn an intent; a pitch aimed at you with a concrete flaw earns an objection. How easily you are won over depends on how open you are (the user message says).
 
 Make all your tool calls in one response. Ordinary posts that do not interest you can be scrolled past; if nothing at all moves you, call no tools.
@@ -60,7 +59,6 @@ export const TOOLS: Anthropic.Tool[] = [
   tool("reply", "Reply to a post.", { ...postId, text: { type: "string" } }),
   tool("follow", "Follow the author of a post.", postId),
   tool("unfollow", "Unfollow the author of a post (only if you follow them).", postId),
-  tool("post", "Write one original post. Only when the user message says you may post this round.", { text: { type: "string" } }),
   tool("intent", "Private positive signal on a pitch (meaning for you is in the user message). At most 2 signals per session.", reason),
   tool("objection", "Private objection to a pitch aimed at people like you (meaning for you is in the user message). At most 2 signals per session.", reason),
 ];
@@ -69,7 +67,7 @@ const level = (x: number, low: string, mid: string, high: string) => (x < 0.33 ?
 const SEGMENT_LABEL = { customer: "potential customer", investor: "investor", industry_lead: "industry leader", regulator: "regulator / government official", media: "journalist or creator" };
 
 /** Layer 3: persona, allowed signals and feed. */
-export function userMessage(store: Store, agent: Agent, feed: FeedItem[], mayPost: boolean): string {
+export function userMessage(store: Store, agent: Agent, feed: FeedItem[]): string {
   const p = agent.persona;
   const following = new Set(agent.followingIds);
   const lines = feed.map(({ post, viaId }) => {
@@ -93,7 +91,6 @@ Openness: ${level(p.openness, "you rarely change your mind about a product; only
 Signals (on pitches only):
 - intent: ${sig.intent.means}
 - objection: ${sig.objection.means}
-You may post this round: ${mayPost ? "yes" : "no"}.
 
 <feed>
 ${lines.join("\n")}

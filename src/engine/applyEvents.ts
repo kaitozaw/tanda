@@ -1,5 +1,5 @@
 import type { EventType, FeedItem, Persona, Post, SessionResult } from "./types";
-import { emptyCounts, type Store } from "./store";
+import type { Store } from "./store";
 import { rules } from "./config";
 
 export interface Notification {
@@ -20,27 +20,25 @@ export const pointsFor = (type: EventType, p: Pick<Persona, "tier" | "segment">)
 const clipWords = (text: string, n: number) => text.split(/\s+/).filter(Boolean).slice(0, n).join(" ");
 
 /**
- * Validate and apply one round of session results. Only posts that were in the agent's own feed
- * can be acted on, and signals only on pitches. Returns notifications for members whose pitches
- * got reactions.
+ * Validate and apply one round of session results. Only pitches that were in the agent's own feed
+ * can be acted on; background posts are scenery and never change. Returns notifications for members
+ * whose pitches got reactions.
  */
 export function applyResults(
   store: Store,
   round: number,
   feeds: Map<string, FeedItem[]>,
   results: SessionResult[],
-  posters: Set<string>,
-): { notifications: Notification[]; newPosts: Post[] } {
+): { notifications: Notification[] } {
   const notifications: Notification[] = [];
-  const newPosts: Post[] = [];
 
   for (const r of results) {
     const agent = store.agents.get(r.agentId);
     const feed = feeds.get(r.agentId);
     if (!agent || !feed) continue;
     const { role, segment } = agent.persona;
-    const inFeed = new Map(feed.map((it) => [it.post.id, it]));
-    const isPitch = (postId: string) => inFeed.get(postId)?.post.authorType === "member";
+    const inFeed = new Map(feed.filter((it) => it.post.authorType === "member").map((it) => [it.post.id, it]));
+    const isPitch = (postId: string) => inFeed.has(postId);
     // A person likes, reposts, replies or signals once per post, even if it shows up again next round.
     const already = (type: EventType, postId: string) =>
       (store.eventsByPost.get(postId) ?? []).some((e) => e.agentId === agent.id && e.type === type);
@@ -84,28 +82,8 @@ export function applyResults(
       signals++;
       record(s.kind, s.postId, clipWords(s.reason, rules.maxReasonWords) || null);
     }
-
-    if (r.post && posters.has(agent.id)) {
-      const post: Post = {
-        id: `p${round}_${agent.id}`,
-        authorType: "agent",
-        authorId: agent.id,
-        text: r.post.slice(0, rules.maxPostChars),
-        createdAt: Date.now(),
-        createdRound: round,
-        roundsSeen: 0,
-        seenBy: [],
-        counts: emptyCounts(),
-        points: 0,
-        finalized: false,
-        feedback: null,
-        feedbackStatus: "none",
-      };
-      store.addPost(post);
-      newPosts.push(post);
-    }
   }
-  return { notifications, newPosts };
+  return { notifications };
 }
 
 /** Count the round for every post in the pool; posts that reach the limit become final. */

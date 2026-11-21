@@ -1,7 +1,6 @@
-import type { Agent, FeedItem } from "./types";
 import type { Store } from "./store";
-import { config, rules } from "./config";
-import { buildFeed, prepare } from "./feedBuilder";
+import { config } from "./config";
+import { planFeeds } from "./feedBuilder";
 import { runSessions, type SessionInput } from "./sessionRunner";
 import { applyResults, finalizeRound } from "./applyEvents";
 import { FeedbackWorker } from "./feedback";
@@ -15,7 +14,9 @@ export interface RoundSummary {
   rateLimited: number;
   timedOut: number;
   events: number;
-  newPosts: number;
+  /** Pitches in this round and the new viewers they got. */
+  pitches: number;
+  views: number;
   finalized: number;
   ms: number;
   inputTokens: number;
@@ -83,44 +84,28 @@ export class RoundEngine {
     const started = Date.now();
     const store = this.store;
     const round = store.room.round + 1;
-    const pool = store.activePosts();
+    const pitches = store.activePosts().filter((p) => p.authorType === "member");
+    const background = store.postOrder.map((id) => store.posts.get(id)!).filter((p) => p.authorType === "agent");
 
-    // Reposts of active posts, so followers of a reposter see them.
-    const repostsByPost = new Map<string, string[]>();
-    for (const p of pool) {
-      const ids = (store.eventsByPost.get(p.id) ?? []).filter((e) => e.type === "repost").map((e) => e.agentId);
-      if (ids.length) repostsByPost.set(p.id, ids);
-    }
-    const ctx = prepare(pool, repostsByPost);
-
-    // Not everyone opens the app every 15 minutes: more active people are online more often.
-    const agents = store.activeAgents();
-    const online = agents.filter((a) => Math.random() < 0.5 + 0.5 * a.persona.activity);
-    const posters = pickPosters(online, Math.max(1, Math.round((rules.postersPerRound * agents.length) / 1000)));
-
-    const feeds = new Map<string, FeedItem[]>();
+    // Each pitch's audience depends only on its own results (feedBuilder), so timing does not matter.
+    const feeds = planFeeds(store, pitches, background, store.activeAgents());
     const sessions: SessionInput[] = [];
-    for (const agent of online) {
-      const feed = buildFeed(agent, ctx);
-      const mayPost = posters.has(agent.id);
-      if (feed.length === 0 && !mayPost) continue;
-      feeds.set(agent.id, feed);
-      sessions.push({ agent, feed, mayPost });
-      for (const it of feed) {
-        it.post.counts.impressions++;
-        // Who has seen each pitch: feedback counts it per segment, and pitch slots balance on it.
-        const viewers = ctx.seen.get(it.post.id);
-        if (viewers && !viewers.has(agent.id)) {
-          viewers.add(agent.id);
-          it.post.seenBy.push(agent.id);
-        }
+    const newViewers = new Map(pitches.map((p) => [p.id, 0]));
+    for (const [agentId, feed] of feeds) {
+      sessions.push({ agent: store.agents.get(agentId)!, feed });
+      for (const { post } of feed) {
+        if (post.authorType !== "member") continue;
+        post.counts.impressions++;
+        post.seenBy.push(agentId);
+        newViewers.set(post.id, newViewers.get(post.id)! + 1);
       }
     }
+    for (const p of pitches) (p.audienceByRound ??= []).push(newViewers.get(p.id)!);
 
     const { results, stats } = await runSessions(store, sessions);
     const eventsBefore = store.events.length;
-    const { notifications, newPosts } = applyResults(store, round, feeds, results, posters);
-    const finalized = finalizeRound(store, pool);
+    const { notifications } = applyResults(store, round, feeds, results);
+    const finalized = finalizeRound(store, pitches);
 
     store.room.round = round;
     store.room.requestCount += config.fakeLlm ? 0 : sessions.length;
@@ -139,7 +124,8 @@ export class RoundEngine {
       rateLimited: stats.rateLimited,
       timedOut: stats.timedOut,
       events: store.events.length - eventsBefore,
-      newPosts: newPosts.length,
+      pitches: pitches.length,
+      views: [...newViewers.values()].reduce((a, b) => a + b, 0),
       finalized: finalized.length,
       ms: store.room.lastRoundMs,
       inputTokens: stats.inputTokens,
@@ -147,17 +133,4 @@ export class RoundEngine {
       outputTokens: stats.outputTokens,
     };
   }
-}
-
-function pickPosters(agents: Agent[], n: number): Set<string> {
-  const pool = [...agents];
-  const out = new Set<string>();
-  while (out.size < Math.min(n, pool.length)) {
-    // Weighted by activity: active people post more.
-    const total = pool.reduce((s, a) => s + a.persona.activity, 0);
-    let r = Math.random() * total;
-    const i = pool.findIndex((a) => (r -= a.persona.activity) <= 0);
-    out.add(pool.splice(i < 0 ? 0 : i, 1)[0].id);
-  }
-  return out;
 }

@@ -5,7 +5,7 @@ import type { FeedItem, SessionResult } from "@/engine/types";
 import { makeAgent, makePost, storeWith } from "./helpers";
 
 const result = (agentId: string, r: Partial<SessionResult>): SessionResult => ({
-  agentId, likes: [], reposts: [], replies: [], follows: [], unfollows: [], signals: [], post: null, ...r,
+  agentId, likes: [], reposts: [], replies: [], follows: [], unfollows: [], signals: [], ...r,
 });
 const feedOf = (...posts: ReturnType<typeof makePost>[]): FeedItem[] => posts.map((post) => ({ post, viaId: null }));
 
@@ -34,7 +34,7 @@ describe("applyResults", () => {
       follows: ["p1"],
       signals: [{ postId: "p1", kind: "intent", reason: "Would save me hours" }, { postId: "p2", kind: "intent", reason: "not in feed" }],
     });
-    const { notifications } = applyResults(store, 1, new Map([["a1", feedOf(post)]]), [r], new Set());
+    const { notifications } = applyResults(store, 1, new Map([["a1", feedOf(post)]]), [r]);
     expect(post.counts).toMatchObject({ like: 1, repost: 1, reply: 1, follow: 1, intent: 1 });
     expect(post.points).toBe(2 + 5 + 5 + 10 + 30);
     expect(other.points).toBe(0);
@@ -53,7 +53,7 @@ describe("applyResults", () => {
     applyResults(store, 1, feeds, [
       result("v1", { reposts: ["p1"], signals: [{ postId: "p1", kind: "intent", reason: "Strong traction" }] }),
       result("g1", { signals: [{ postId: "p1", kind: "objection", reason: "Privacy issue" }] }),
-    ], new Set());
+    ]);
     expect(post.points).toBe(15 + 100 + 0);
   });
 
@@ -73,7 +73,7 @@ describe("applyResults", () => {
         { postId: "p2", kind: "intent", reason: "over the cap" }, // dropped: max 2
       ],
     });
-    applyResults(store, 1, new Map([["a1", feedOf(pitch, pitch2, agentPost)]]), [r], new Set());
+    applyResults(store, 1, new Map([["a1", feedOf(pitch, pitch2, agentPost)]]), [r]);
     expect(pitch.counts).toMatchObject({ intent: 1, objection: 0 });
     expect(pitch2.counts).toMatchObject({ intent: 0, objection: 1 });
     expect(agentPost.counts.intent).toBe(0);
@@ -86,17 +86,20 @@ describe("applyResults", () => {
     const posts = ["p1", "p2", "p3", "p4"].map((id) => makePost(id, "m1"));
     const store = storeWith([a], posts);
     const r = result("a1", { replies: posts.map((p) => ({ postId: p.id, text: "hi" })), unfollows: ["p1"] });
-    applyResults(store, 1, new Map([["a1", feedOf(...posts)]]), [r], new Set());
+    applyResults(store, 1, new Map([["a1", feedOf(...posts)]]), [r]);
     expect(posts.reduce((s, p) => s + p.counts.reply, 0)).toBe(3);
     expect(posts[0].counts.unfollow).toBe(0);
   });
 
-  it("only lets picked posters create posts", () => {
-    const store = storeWith([makeAgent("a1"), makeAgent("a2")], []);
-    const feeds = new Map<string, FeedItem[]>([["a1", []], ["a2", []]]);
-    const { newPosts } = applyResults(store, 3, feeds, [result("a1", { post: "Rent is up again" }), result("a2", { post: "No" })], new Set(["a1"]));
-    expect(newPosts).toHaveLength(1);
-    expect(newPosts[0]).toMatchObject({ authorId: "a1", authorType: "agent", seenBy: [] });
+  it("ignores actions on background (agent) posts: they are scenery and never change", () => {
+    const a = makeAgent("a1");
+    const bg = makePost("s1", "a9", { authorType: "agent" });
+    const store = storeWith([a, makeAgent("a9")], [bg]);
+    const r = result("a1", { likes: ["s1"], replies: [{ postId: "s1", text: "same" }], follows: ["s1"] });
+    applyResults(store, 1, new Map([["a1", feedOf(bg)]]), [r]);
+    expect(bg.counts.like + bg.counts.reply + bg.counts.follow).toBe(0);
+    expect(store.events).toHaveLength(0);
+    expect(a.followingIds).not.toContain("a9");
   });
 });
 
@@ -124,8 +127,8 @@ describe("repeat exposure", () => {
       replies: [{ postId: "p1", text: "again" }],
       signals: [{ postId: "p1", kind: "intent", reason: "nice" }],
     });
-    applyResults(store, 1, feeds, [r], new Set());
-    applyResults(store, 2, feeds, [r], new Set());
+    applyResults(store, 1, feeds, [r]);
+    applyResults(store, 2, feeds, [r]);
     expect(post.counts).toMatchObject({ like: 1, reply: 1, intent: 1 });
   });
 });

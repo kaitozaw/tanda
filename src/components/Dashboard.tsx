@@ -1,7 +1,7 @@
 "use client";
-import { useState } from "react";
-import type { RoomView } from "@/engine/views";
-import { Avatar, Progress, SIM_LABEL, ScorecardGrid, SEGMENT_LABEL, compact } from "./ui";
+import { useEffect, useState } from "react";
+import type { PitchDetail, RoomView } from "@/engine/views";
+import { Avatar, FeedbackCard, Progress, SIM_LABEL, ScorecardGrid, SEGMENT_LABEL, compact } from "./ui";
 
 export const EVENT_LABEL: Record<string, string> = {
   like: "Likes",
@@ -13,6 +13,56 @@ export const EVENT_LABEL: Record<string, string> = {
   objection: "Objections",
 };
 const ORDER = Object.keys(EVENT_LABEL);
+
+type Row = RoomView["leaderboard"][number];
+
+/** A pitch's full results, loaded when its row is opened (and again each round / when feedback lands). */
+function PitchResults({ roomId, row, round, roundsToFinal }: { roomId: string; row: Row; round: number; roundsToFinal: number }) {
+  const [detail, setDetail] = useState<PitchDetail | null>(null);
+  useEffect(() => {
+    fetch(`/api/rooms/${roomId}/posts/${row.id}`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { detail: PitchDetail | null } | null) => setDetail(d?.detail ?? null))
+      .catch(() => {});
+  }, [roomId, row.id, round, row.feedbackStatus]);
+
+  if (!detail) return <p className="text-sm text-muted">Loading results…</p>;
+  const rows = [...detail.breakdown].sort((a, b) => ORDER.indexOf(a.type) - ORDER.indexOf(b.type));
+  return (
+    <>
+      <div className="flex flex-wrap items-center gap-4 text-[13px] text-muted">
+        <Progress post={row} roundsToFinal={roundsToFinal} />
+        <span>{compact(detail.scorecard.views)} views</span>
+      </div>
+      <ScorecardGrid s={detail.scorecard} />
+      <table className="w-full text-sm">
+        <thead className="text-[13px] text-muted">
+          <tr>
+            <th className="text-left font-normal">Engagement</th>
+            <th className="text-right font-normal">Count</th>
+            <th className="text-right font-normal">Points</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.type} className="border-t border-line">
+              <td className="py-1.5">{EVENT_LABEL[r.type] ?? r.type}</td>
+              <td className="text-right tabular-nums">{r.count}</td>
+              <td className={`text-right font-bold tabular-nums ${r.points > 0 ? "text-repost" : r.points < 0 ? "text-like" : ""}`}>{r.points}</td>
+            </tr>
+          ))}
+          <tr className="border-t border-line font-extrabold">
+            <td className="py-1.5">Total</td>
+            <td />
+            <td className="text-right tabular-nums text-accent">{row.points}</td>
+          </tr>
+        </tbody>
+      </table>
+      {detail.feedbackStatus === "pending" && <p className="text-sm text-muted">Writing feedback…</p>}
+      {detail.feedback ? <FeedbackCard fb={detail.feedback} /> : <p className="text-[12px] text-muted">{SIM_LABEL}</p>}
+    </>
+  );
+}
 
 export default function Dashboard({ view }: { view: RoomView }) {
   const { leaderboard, room, stats, audience } = view;
@@ -51,7 +101,6 @@ export default function Dashboard({ view }: { view: RoomView }) {
         <ol>
           {leaderboard.map((p, i) => {
             const expanded = open === p.id;
-            const rows = [...p.breakdown].sort((a, b) => ORDER.indexOf(a.type) - ORDER.indexOf(b.type));
             return (
               <li key={p.id} className="border-t border-line">
                 <button
@@ -64,11 +113,12 @@ export default function Dashboard({ view }: { view: RoomView }) {
                     <div className="flex flex-wrap items-center gap-1.5 text-[15px]">
                       <span className="font-bold">{p.nickname}</span>
                       {!p.finalized && <span className="text-xs font-bold text-repost">● live</span>}
+                      {p.feedbackStatus === "done" && <span className="text-xs text-accent">feedback</span>}
                     </div>
                     <p className={`text-sm ${expanded ? "mt-1 whitespace-pre-wrap break-words text-ink" : "truncate text-muted"}`}>{p.text}</p>
                     {!expanded && (
                       <p className="mt-0.5 text-[12px] text-muted tabular-nums">
-                        {p.scorecard.segments.reduce((n, g) => n + g.intent, 0)} intent · {p.scorecard.segments.reduce((n, g) => n + g.objection, 0)} objections
+                        reach {compact(p.reach)} · {p.intent} intent · {p.objection} objections
                       </p>
                     )}
                   </div>
@@ -78,35 +128,7 @@ export default function Dashboard({ view }: { view: RoomView }) {
 
                 {expanded && (
                   <div className="space-y-3 px-4 pb-4 pl-[4.75rem]">
-                    <div className="flex flex-wrap items-center gap-4 text-[13px] text-muted">
-                      <Progress post={p} roundsToFinal={room.roundsToFinal} />
-                      <span>{compact(p.scorecard.views)} views</span>
-                    </div>
-                    <ScorecardGrid s={p.scorecard} />
-                    <table className="w-full text-sm">
-                      <thead className="text-[13px] text-muted">
-                        <tr>
-                          <th className="text-left font-normal">Engagement</th>
-                          <th className="text-right font-normal">Count</th>
-                          <th className="text-right font-normal">Points</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {rows.map((r) => (
-                          <tr key={r.type} className="border-t border-line">
-                            <td className="py-1.5">{EVENT_LABEL[r.type] ?? r.type}</td>
-                            <td className="text-right tabular-nums">{r.count}</td>
-                            <td className={`text-right font-bold tabular-nums ${r.points > 0 ? "text-repost" : r.points < 0 ? "text-like" : ""}`}>{r.points}</td>
-                          </tr>
-                        ))}
-                        <tr className="border-t border-line font-extrabold">
-                          <td className="py-1.5">Total</td>
-                          <td />
-                          <td className="text-right tabular-nums text-accent">{p.points}</td>
-                        </tr>
-                      </tbody>
-                    </table>
-                    <p className="text-[12px] text-muted">{SIM_LABEL}</p>
+                    <PitchResults roomId={room.id} row={p} round={room.round} roundsToFinal={room.roundsToFinal} />
                   </div>
                 )}
               </li>

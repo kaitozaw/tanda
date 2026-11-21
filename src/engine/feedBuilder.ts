@@ -1,87 +1,110 @@
-import type { Agent, FeedItem, Post } from "./types";
+import type { Agent, EventType, FeedItem, Post } from "./types";
+import type { Store } from "./store";
 import { rules } from "./config";
 
-/** Internal ranking for recommended slots (not the points score). */
-export function rank(post: Post): number {
-  const w = rules.rankWeights;
-  const engagement = w.like * post.counts.like + w.repost * post.counts.repost + w.reply * post.counts.reply;
-  const simAgeHours = (post.roundsSeen * rules.simMinutesPerRound) / 60;
-  return (1 + engagement) / Math.pow(simAgeHours + 2, 1.5);
+/**
+ * Exposure planning (plan/PRODUCT.md → Round). Who sees a pitch depends only on that pitch's own
+ * results, never on how many other pitches are live, so a pitch scores the same whenever it is posted:
+ * - pitch round 1: the author's followers + a fixed-size random sample;
+ * - later rounds: an audience sized by the previous round's reaction rate, drawn first from followers
+ *   of agents who reacted to it (word of mouth), then at random.
+ * Each agent's feed is its assigned pitches plus background posts (the room's starter posts), which
+ * never change, so the surroundings are the same at any time.
+ */
+
+/** Reactions that count toward a pitch's spread. */
+const SPREADS: EventType[] = ["like", "repost", "reply", "follow", "intent"];
+
+/** Scale a per-1,000-agents number to the agents in use. */
+const scaled = (n: number, agents: number) => Math.max(1, Math.round((n * agents) / 1000));
+
+/** Share of last round's new viewers who reacted (like / repost / reply / follow / intent) in that round. */
+export function reactionRate(store: Store, post: Post, round: number): number {
+  const seen = post.audienceByRound?.at(-1) ?? 0;
+  if (!seen) return 0;
+  const reacted = new Set(
+    (store.eventsByPost.get(post.id) ?? []).filter((e) => e.round === round && SPREADS.includes(e.type)).map((e) => e.agentId),
+  );
+  return Math.min(1, reacted.size / seen);
 }
 
-/** Shared per-round data so building 1,000 feeds stays cheap. */
-export function prepare(pool: Post[], repostsByPost: Map<string, string[]>, rand = Math.random) {
-  const ranked = [...pool].sort((a, b) => rank(b) - rank(a));
-  const fresh = pool.filter((p) => p.roundsSeen === 0);
-  const pitches = pool.filter((p) => p.authorType === "member");
-  /** Who has seen each pitch. The round engine adds viewers while it builds feeds. */
-  const seen = new Map(pitches.map((p) => [p.id, new Set(p.seenBy)]));
-  return { pool, ranked, fresh, pitches, seen, repostsByPost, rand };
+/** New viewers a pitch gets this round (round 1: the random sample, on top of the author's followers). */
+export function audienceSize(store: Store, post: Post, agents: number): number {
+  const x = rules.exposure;
+  if (post.roundsSeen === 0) return scaled(x.seedRandom, agents);
+  const rate = reactionRate(store, post, store.room.round);
+  return scaled(x.minNext + (x.maxNext - x.minNext) * Math.min(1, rate / x.targetRate), agents);
 }
 
-export type Prepared = ReturnType<typeof prepare>;
+const shuffle = <T,>(xs: T[], rand: () => number): T[] => {
+  const a = [...xs];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+};
 
-export function buildFeed(agent: Agent, ctx: Prepared): FeedItem[] {
-  const { follows, recommended, exploration, pitches } = rules.feed;
-  const following = new Set(agent.followingIds);
-  const chosen = new Set<string>();
-  const items: FeedItem[] = [];
-  const isOwn = (p: Post) => p.authorType === "agent" && p.authorId === agent.id;
+/**
+ * Build this round's feeds. Only agents with at least one pitch to see get a feed (and a session).
+ * `agents` are the agents in use (AGENT_COUNT), `background` the room's starter posts.
+ */
+export function planFeeds(store: Store, pitches: Post[], background: Post[], agents: Agent[], rand = Math.random): Map<string, FeedItem[]> {
+  const inUse = new Set(agents.map((a) => a.id));
+  const assigned = new Map<string, FeedItem[]>();
 
-  // 1. Follows: posts by accounts it follows, or reposted by agents it follows. Newest first.
-  const followCandidates: FeedItem[] = [];
-  for (let i = ctx.pool.length - 1; i >= 0; i--) {
-    const p = ctx.pool[i];
-    if (isOwn(p)) continue;
-    if (following.has(p.authorId)) {
-      followCandidates.push({ post: p, viaId: null });
+  // Random order each round, so no pitch wins ties for an agent's limited pitch slots.
+  for (const post of shuffle(pitches, rand)) {
+    const seen = new Set(post.seenBy);
+    const take = (agentId: string, viaId: string | null): boolean => {
+      if (seen.has(agentId) || !inUse.has(agentId)) return false;
+      const list = assigned.get(agentId) ?? [];
+      if (list.length >= rules.feed.maxPitches) return false;
+      list.push({ post, viaId });
+      assigned.set(agentId, list);
+      seen.add(agentId);
+      return true;
+    };
+    const fillRandom = (n: number) => {
+      let added = 0;
+      for (const a of shuffle(agents, rand)) {
+        if (added >= n) break;
+        if (take(a.id, null)) added++;
+      }
+    };
+
+    const target = audienceSize(store, post, agents.length);
+    if (post.roundsSeen === 0) {
+      // Round 1: every pitch starts from the same place: the author's followers + a random sample.
+      // Followers it cannot reach (their pitch slots are full) are replaced at random, so the total stays.
+      const followers = store.members.get(post.authorId)?.followerIds ?? [];
+      const reached = followers.filter((id) => take(id, null)).length;
+      fillRandom(target + followers.length - reached);
       continue;
     }
-    const via = ctx.repostsByPost.get(p.id)?.find((id) => following.has(id) && id !== agent.id);
-    if (via) followCandidates.push({ post: p, viaId: via });
-  }
-  // Mix rank and recency: take the best-ranked among the newest candidates.
-  followCandidates
-    .slice(0, follows * 3)
-    .sort((a, b) => rank(b.post) - rank(a.post))
-    .slice(0, follows)
-    .forEach((it) => {
-      items.push(it);
-      chosen.add(it.post.id);
-    });
-
-  // 2. Pitch slots (like ad slots): pitches this agent has not seen yet, least-seen first, so every
-  // pitch reaches a fair share of the room whatever its engagement. `seen` grows while the round's
-  // feeds are built (roundEngine), so consecutive agents get different pitches.
-  ctx.pitches
-    .filter((p) => !chosen.has(p.id) && !ctx.seen.get(p.id)!.has(agent.id))
-    .map((p) => ({ p, key: ctx.seen.get(p.id)!.size + ctx.rand() }))
-    .sort((a, b) => a.key - b.key)
-    .slice(0, pitches)
-    .forEach(({ p }) => {
-      items.push({ post: p, viaId: null });
-      chosen.add(p.id);
-    });
-
-  // 3. Exploration: random brand-new posts, so new posts always get some reach.
-  const fresh = ctx.fresh.filter((p) => !chosen.has(p.id) && !isOwn(p));
-  for (let e = 0; e < exploration && fresh.length > 0; e++) {
-    const i = Math.floor(ctx.rand() * fresh.length);
-    const p = fresh.splice(i, 1)[0];
-    items.push({ post: p, viaId: null });
-    chosen.add(p.id);
+    // Word of mouth first: followers of agents who reacted to it (shown as reposted_by for reposters).
+    const events = store.eventsByPost.get(post.id) ?? [];
+    const reposters = new Set(events.filter((e) => e.type === "repost").map((e) => e.agentId));
+    const reacted = new Set(events.filter((e) => SPREADS.includes(e.type)).map((e) => e.agentId));
+    const candidates: [string, string | null][] = [];
+    for (const id of reacted) {
+      for (const f of store.agents.get(id)?.followerIds ?? []) candidates.push([f, reposters.has(id) ? id : null]);
+    }
+    let added = 0;
+    for (const [id, via] of shuffle(candidates, rand)) {
+      if (added >= target) break;
+      if (take(id, via)) added++;
+    }
+    fillRandom(target - added);
   }
 
-  // 4. Recommended: best-ranked posts from accounts it does not follow. Also fills slots left
-  // empty above, so a feed is full whenever there are enough posts.
-  const total = follows + recommended + exploration + pitches;
-  for (const p of ctx.ranked) {
-    if (items.length >= total) break;
-    if (chosen.has(p.id) || isOwn(p) || following.has(p.authorId)) continue;
-    items.push({ post: p, viaId: null });
-    chosen.add(p.id);
+  // Fill each feed with background posts (never the agent's own), then mix the order.
+  const feeds = new Map<string, FeedItem[]>();
+  for (const [agentId, items] of assigned) {
+    const fill = shuffle(background.filter((p) => p.authorId !== agentId), rand)
+      .slice(0, Math.max(0, rules.feed.size - items.length))
+      .map((post) => ({ post, viaId: null }));
+    feeds.set(agentId, shuffle([...items, ...fill], rand));
   }
-
-  // Shuffle lightly so slot order does not leak into behaviour.
-  return items.sort(() => ctx.rand() - 0.5);
+  return feeds;
 }

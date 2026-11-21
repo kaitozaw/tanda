@@ -44,7 +44,7 @@ How we build what [PRODUCT.md](PRODUCT.md) describes. Rules (audience mix, feed 
 ### Load during the demo
 The worst moment is ~100+ people pitching within a few seconds, then many pitches finalizing in the same round.
 - **Refresh fan-out.** Every client refetches the room on each `refresh` push, so pushing on every post would cost posts × clients GETs (100 × 100 = 10,000). The broadcaster sends at most one `refresh` per room per `REFRESH_MS` (1s): the first goes out at once and later ones in the window merge into one trailing push. Clients add 0–0.5s jitter and run one GET at a time. Feedback completions go through the same throttle, so the reveal does not cause a second spike.
-- **Agent load does not grow with people.** Each round runs one Haiku session per online agent (~750 of 1,000), however many people pitch. Pitches only change what is in the feeds.
+- **Agent load follows live pitches, not people.** Only agents with a pitch to see run a session. A pitch costs about 150 sessions in its first round and 20–300 in each later round (per 1,000 agents), so roughly 200–1,050 sessions over its life, shared when pitches overlap (up to 3 per feed). A quiet room costs nothing.
 - **Feedback.** Pitches made in the same 15s finalize together, so the worker runs 30 Sonnet requests in parallel (`FEEDBACK_CONCURRENCY`) to have them ready within the 1-minute reveal.
 - **Claude rate limits.** A round is ~750 Haiku requests within seconds (~3,000 per minute). Failed sessions count as "no action" without retrying, so `/admin` → `lastRound` splits `failed` into `rateLimited` (raise the org limit) and `timedOut`. The server logs a warning when more than 5% fail.
 - **Spam.** One pitch per member per 5s (`429` otherwise), so one person cannot flood the room.
@@ -82,7 +82,7 @@ Persona { market /* market id */, name, age, region, tier: "power" | "crowd",
           role, group /* persona label only */, priorities: string[], adoption, priceSensitivity, scepticism,
           activity, openness /* 0-1 each */, bio }
 Post    { id, authorType: "agent" | "member", authorId, text, createdRound, roundsSeen,
-          seenBy: AgentId[] /* pitches only, unique */, counts: Counts, points, finalized,
+          seenBy: AgentId[] /* pitches only, unique */, audienceByRound: number[] /* new viewers per round */, counts: Counts, points, finalized,
           feedback?, feedbackStatus }
 Counts  { like, repost, reply, follow, unfollow, intent, objection, impressions }
 Event   { id, round, agentId, type: keyof Counts (except impressions), postId,
@@ -91,7 +91,7 @@ Event   { id, round, agentId, type: keyof Counts (except impressions), postId,
 - Removed from main: `Room.topic`, `Agent.stance`, `Persona.leaning` / `interests`, `Post.side`, `neutralShift`, `Event.stanceBefore` / `stanceAfter`. A member post is a pitch; there is no `isPitch` flag.
 - `seenBy` is kept for pitches only. Feedback needs to know *which* agents saw a pitch (e.g. "how many investors saw it" next to how many signalled `intent`), and storing that for every agent post would be wasteful.
 - `data/rooms/<roomId>/agents.json` (1,000 personas for that market) is generated once before the demo and loaded at startup. It moves from `data/agents.json` so each market has its own.
-- `data/rooms/<roomId>/posts.json` holds the room's starter posts (`{ segment, text }`; ~20 for `au`: everyday life and work in Australia, no pitches). They are added on a fresh seed and on reset, so the timeline is not empty before anyone pitches. Each is posted by a different agent of that segment. A room without the file starts empty.
+- `data/rooms/<roomId>/posts.json` holds the room's starter posts (`{ segment, text }`; ~20 for `au`: everyday life and work in Australia, no pitches). They are added on a fresh seed and on reset, and are the **background** of every agent's feed: they never finalize and agents' actions on them are ignored, so the surroundings of a pitch are the same at any time. Each is posted by a different agent of that segment. A room without the file starts empty.
 - `events` is the engagement log. Points, notifications and feedback are all computed from it.
 
 ## Audience generation (`scripts/generate-agents.ts`)
@@ -104,18 +104,18 @@ Same script as main, run once per market: `npm run agents:generate -- --market a
 Three layers, ordered so the shared parts are cached:
 1. **Tools + system rules:** the same for every agent. The PRODUCT.md realism rules, what each signal means, and the prompt-injection guard. Cache breakpoint.
 2. **Market context:** the market's `name` and `summary`. The same for every agent in the room. Cache breakpoint.
-3. **User message:** persona, the signal kinds this agent may use, the may-post flag, and the feed. Pitches are marked `pitch="yes"`.
+3. **User message:** persona, what each signal means for this agent's segment, and the feed. Pitches are marked `pitch="yes"`.
 
-Tools: main's `like`, `repost`, `reply`, `follow`, `unfollow` and `post`, plus `intent(post_id, reason)` and `objection(post_id, reason)`. The schemas are the same for every agent, so they stay cacheable; what each signal means for this agent's segment (`rules.signals`) is in the user message.
+Tools: `like`, `repost`, `reply`, `follow` and `unfollow` (agents do not write posts), plus `intent(post_id, reason)` and `objection(post_id, reason)`. The schemas are the same for every agent, so they stay cacheable; what each signal means for this agent's segment (`rules.signals`) is in the user message.
 
 ## Logic
 | Module | Job |
 |---|---|
 | `seed` | Load the room's `agents.json`. Build the power-law follow graph (power tier first, then the PRODUCT.md extras). Add the room's starter posts. Give each new member 100 random crowd followers. |
 | `roundEngine` | Every 15s: skip if the previous round is still running, then run the steps below and increment `round`. Runs only while some pitch is not final yet: starts on a member's pitch, stops when the last one is final (saves API budget). Stops for the day at a daily request cap (config). |
-| `feedBuilder` | Build each agent's 12-post feed (follows / pitch slots / exploration / `rank`). Pitch slots pick unseen pitches, least-seen first, from a per-round viewer set that grows as feeds are built, so pitches rotate across agents. Drop posts older than 4 rounds. Add each viewer to the pitch's `seenBy`. |
-| `sessionRunner` | One Haiku request per agent, three-layer prompt (above). Post text is wrapped as data. 10s timeout. |
-| `applyEvents` | Validate tool calls: post must be in that agent's feed; max 3 replies; signals only on pitches, max 2, one per kind per agent and pitch, `reason` cut to 20 words. Append events, update counts and follows. |
+| `feedBuilder` | Exposure planning (PRODUCT.md → Round): each live pitch's new viewers this round, sized only by its own last-round reaction rate (round 1: author's followers + a random sample, unreachable followers replaced at random), word of mouth first; at most 3 pitches per agent. Each agent with a pitch gets a 12-post feed filled with background (starter) posts. Pitches are processed in random order. |
+| `sessionRunner` | One Haiku request per agent with a feed (agents with no pitch to see are skipped), three-layer prompt (above). Post text is wrapped as data. 10s timeout. |
+| `applyEvents` | Validate tool calls: only pitches in that agent's feed count (actions on background posts are ignored, so they never change); max 3 replies; signals max 2, one per kind per agent and pitch, `reason` cut to 20 words. Append events, update counts and follows. |
 | `scorer` | Add points per PRODUCT.md: engagement by the acting agent's tier, intent by its segment, objections 0 (`pointsFor`). The score is the sum. |
 | `finalizer` | Mark posts that have been through 4 rounds as final and queue pitches for feedback. |
 | `scorecard` | Pure function: the feedback numbers (views, reach, reaction rate, and per segment: saw, reacted, intent, objection) from a pitch's events and `seenBy`. Used by the Dashboard and fed to feedback. |
@@ -126,7 +126,8 @@ Tools: main's `like`, `repost`, `reply`, `follow`, `unfollow` and `post`, plus `
 - The home page reads the market list from `markets.ts` directly (server component), so there is no markets API.
 - `POST /api/rooms/:id/join` → member id (nickname). `404` for any id but the open market's (so `coming_soon` markets cannot be joined).
 - `POST /api/rooms/:id/posts` → pitch. Checks length, word filter, 5s cooldown per member.
-- `GET /api/rooms/:id` → current state (on page load).
+- `GET /api/rooms/:id` → current state (on page load and on every refresh push). The leaderboard lists every pitch with light rows only.
+- `GET /api/rooms/:id/posts/:postId` → the post's replies and, for a pitch, its public results (`scorecard`, `breakdown`, `feedback`, `feedbackStatus`).
 - `/admin` (`ADMIN_TOKEN`): status, pause, resume, reset room. Agent count is set with `AGENT_COUNT` + reset.
 
 ## UI
@@ -134,7 +135,7 @@ Tools: main's `like`, `repost`, `reply`, `follow`, `unfollow` and `post`, plus `
 |---|---|
 | **Home** | One card per market. The open one links to its room; `coming_soon` ones are greyed out and not clickable. No room creation. |
 | **Timeline** | Market header (name + one-line summary), the live feed and the pitch composer. Pitches carry a "Pitch" badge. |
-| **Dashboard** | Counts (agents, people, pitches, reactions), the audience by segment, and the leaderboard of pitches. Tap a row for the full text, the scorecard and the breakdown (count and points per type). |
+| **Dashboard** | Counts (agents, people, pitches, reactions), the audience by segment, and the leaderboard of **every** pitch (light rows: points, reach, intent, objections). Opening a row loads that pitch's scorecard, breakdown and **feedback** from `GET /api/rooms/:id/posts/:postId`, so any team can read any other team's results. |
 | **My Pitches** | Each of my pitches with its score, scorecard, activity log (who did what, with signal reasons; signals are visible only to the author), and feedback once final. Tab badge for unread reactions. |
 
 Every scorecard and report shows the label "Simulated audience. Use it to decide what to test for real."

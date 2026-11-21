@@ -1,40 +1,79 @@
 import { describe, expect, it } from "vitest";
-import { buildFeed, prepare, rank } from "@/engine/feedBuilder";
-import { buildFollowGraph } from "@/engine/seed";
-import { makeAgent, makePost } from "./helpers";
+import { audienceSize, planFeeds, reactionRate } from "@/engine/feedBuilder";
+import { rules } from "@/engine/config";
+import { buildFollowGraph, rng } from "@/engine/seed";
+import type { Agent, Post } from "@/engine/types";
+import { makeAgent, makePost, storeWith } from "./helpers";
 
-describe("rank", () => {
-  it("rises with engagement and decays with simulated age", () => {
-    const a = makePost("a", "m1");
-    const b = makePost("b", "m1", { counts: { ...a.counts, reply: 3 } });
-    const old = makePost("c", "m1", { counts: { ...a.counts, reply: 3 }, roundsSeen: 3 });
-    expect(rank(b)).toBeGreaterThan(rank(a));
-    expect(rank(b)).toBeGreaterThan(rank(old));
+/** 1,000 agents, members m1..m5 each followed by 100 random agents, 20 background posts, the given pitches. */
+function room(pitches: Post[]) {
+  const agents: Agent[] = Array.from({ length: 1000 }, (_, i) => makeAgent(`a${i}`));
+  const background = Array.from({ length: 20 }, (_, i) => makePost(`s${i}`, `a${900 + i}`, { authorType: "agent" }));
+  const store = storeWith(agents, [...background, ...pitches]);
+  const r = rng(3);
+  for (let m = 1; m <= 5; m++) {
+    const followers = [...agents].sort(() => r() - 0.5).slice(0, 100).map((a) => a.id);
+    store.members.set(`m${m}`, { id: `m${m}`, nickname: `Team ${m}`, handle: `team${m}`, followerIds: followers, joinedAt: 0 });
+  }
+  return { store, agents, background };
+}
+const pitchCount = (feeds: ReturnType<typeof planFeeds>, id: string) => [...feeds.values()].filter((f) => f.some((it) => it.post.id === id)).length;
+const rand = rng(7);
+
+describe("planFeeds: exposure does not depend on other pitches", () => {
+  it("round 1: the author's followers + the random sample, the same alone or next to other pitches", () => {
+    const alone = makePost("p1", "m1");
+    const a = room([alone]);
+    const solo = pitchCount(planFeeds(a.store, [alone], a.background, a.agents, rand), "p1");
+    expect(solo).toBe(100 + rules.exposure.seedRandom);
+
+    // Five teams posting in the same round (more than an agent's 3 pitch slots can overlap).
+    const crowd = Array.from({ length: 5 }, (_, i) => makePost(`p${i + 1}`, `m${i + 1}`));
+    const b = room(crowd);
+    const feeds = planFeeds(b.store, crowd, b.background, b.agents, rand);
+    for (const p of crowd) expect(pitchCount(feeds, p.id)).toBe(solo);
   });
-});
 
-describe("buildFeed", () => {
-  it("fills follow, pitch, exploration and recommended slots without own posts or duplicates", () => {
-    const me = makeAgent("me", "customer", { followingIds: ["f1"] });
-    const agentPost = (id: string, author: string, extra = {}) => makePost(id, author, { authorType: "agent", ...extra });
-    const followed = Array.from({ length: 8 }, (_, i) => agentPost(`f${i}`, "f1", { roundsSeen: 1 }));
-    const reposted = agentPost("r1", "x", { roundsSeen: 1 });
-    const others = Array.from({ length: 10 }, (_, i) => agentPost(`o${i}`, `u${i}`, { roundsSeen: 1 }));
-    const fresh = Array.from({ length: 5 }, (_, i) => agentPost(`n${i}`, `n${i}`));
-    const own = agentPost("own", "me");
-    const pitches = ["p1", "p2", "p3"].map((id) => makePost(id, "m1", { roundsSeen: 1 }));
-    const pool = [...followed, reposted, ...others, ...fresh, own, ...pitches];
-    const ctx = prepare(pool, new Map([["r1", ["f1"]]]), () => 0.3);
-    const feed = buildFeed(me, ctx);
-    const ids = feed.map((f) => f.post.id);
-    expect(feed).toHaveLength(12);
-    expect(new Set(ids).size).toBe(12);
-    expect(ids).not.toContain("own");
-    const fromFollows = feed.filter((f) => f.post.authorId === "f1" || f.viaId === "f1");
-    expect(fromFollows).toHaveLength(5);
-    expect(fromFollows.find((f) => f.post.id === "r1")?.viaId).toBe("f1");
-    expect(feed.filter((f) => f.post.roundsSeen === 0).length).toBeGreaterThanOrEqual(2); // exploration slots
-    expect(feed.filter((f) => f.post.authorType === "member")).toHaveLength(2); // pitch slots
+  it("later rounds: audience grows with the pitch's own reaction rate, from minNext to maxNext", () => {
+    const p = makePost("p1", "m1", { roundsSeen: 1, audienceByRound: [100] });
+    const { store, agents } = room([p]);
+    store.room.round = 1;
+    expect(audienceSize(store, p, agents.length)).toBe(rules.exposure.minNext);
+    for (let i = 0; i < 15; i++) store.addEvent({ round: 1, agentId: `a${i}`, type: "like", postId: "p1", text: null });
+    expect(reactionRate(store, p, 1)).toBeCloseTo(0.15);
+    expect(audienceSize(store, p, agents.length)).toBe((rules.exposure.minNext + rules.exposure.maxNext) / 2);
+    for (let i = 15; i < 40; i++) store.addEvent({ round: 1, agentId: `a${i}`, type: "intent", postId: "p1", text: null });
+    expect(audienceSize(store, p, agents.length)).toBe(rules.exposure.maxNext); // capped at targetRate
+  });
+
+  it("word of mouth: followers of reactors come first, reposters show as reposted_by", () => {
+    const p = makePost("p1", "m1", { roundsSeen: 1, audienceByRound: [10], seenBy: ["a500"] });
+    const { store, agents, background } = room([p]);
+    store.room.round = 1;
+    const fans = ["a700", "a701", "a702"];
+    store.agents.get("a500")!.followerIds = fans;
+    store.addEvent({ round: 1, agentId: "a500", type: "repost", postId: "p1", text: null });
+    const feeds = planFeeds(store, [p], background, agents, rand);
+    for (const f of fans) expect(feeds.get(f)?.find((it) => it.post.id === "p1")?.viaId).toBe("a500");
+    expect(feeds.has("a500")).toBe(false); // never shown twice
+  });
+
+  it("feeds: at most maxPitches pitches, filled with background posts, never the agent's own", () => {
+    // 25 pitches in one round need more pitch slots than 1,000 agents × 3 have: crowded on purpose.
+    const pitches = Array.from({ length: 25 }, (_, i) => makePost(`p${i}`, `m${(i % 5) + 1}`));
+    const { store, agents, background } = room(pitches);
+    const feeds = planFeeds(store, pitches, background, agents, rand);
+    for (const [agentId, feed] of feeds) {
+      expect(feed.filter((it) => it.post.authorType === "member").length).toBeLessThanOrEqual(rules.feed.maxPitches);
+      expect(feed).toHaveLength(rules.feed.size);
+      expect(feed.some((it) => it.post.authorType === "agent" && it.post.authorId === agentId)).toBe(false);
+    }
+    expect(feeds.size).toBeGreaterThan(900);
+  });
+
+  it("only agents with a pitch to see get a feed", () => {
+    const { store, agents, background } = room([]);
+    expect(planFeeds(store, [], background, agents, rand).size).toBe(0);
   });
 });
 
@@ -46,33 +85,5 @@ describe("buildFollowGraph", () => {
     const median = followers[500];
     expect(followers[0]).toBeGreaterThan(median * 5);
     expect(agents.every((a) => !a.followingIds.includes(a.id))).toBe(true);
-  });
-});
-
-describe("pitch slots", () => {
-  it("every feed gets unseen pitches, least-seen first, even with zero engagement", () => {
-    const popular = Array.from({ length: 12 }, (_, i) => makePost(`a${i}`, `x${i}`, { authorType: "agent", roundsSeen: 1, counts: { ...makePost("t", "t").counts, reply: 9 } }));
-    const pitches = ["p1", "p2", "p3"].map((id) => makePost(id, "m1", { roundsSeen: 1 }));
-    pitches[0].seenBy = ["other1", "other2"];
-    pitches[1].seenBy = ["me"]; // already seen by this agent
-    const ctx = prepare([...popular, ...pitches], new Map(), () => 0.5);
-    const ids = buildFeed(makeAgent("me"), ctx).map((f) => f.post.id);
-    expect(ids).toContain("p3"); // least seen
-    expect(ids).toContain("p1");
-    expect(ids).not.toContain("p2");
-  });
-
-  it("rotates pitches across agents as viewers are added", () => {
-    const pitches = ["p1", "p2", "p3", "p4"].map((id) => makePost(id, "m1", { roundsSeen: 1 }));
-    const ctx = prepare(pitches, new Map(), () => 0.5);
-    const seenCount = new Map<string, number>();
-    for (let i = 0; i < 8; i++) {
-      const agent = makeAgent(`g${i}`);
-      for (const { post } of buildFeed(agent, ctx).filter((f) => f.post.authorType === "member").slice(0, 2)) {
-        ctx.seen.get(post.id)!.add(agent.id);
-        seenCount.set(post.id, (seenCount.get(post.id) ?? 0) + 1);
-      }
-    }
-    expect([...seenCount.values()]).toEqual([4, 4, 4, 4]);
   });
 });

@@ -10,7 +10,6 @@ import { SYSTEM_PROMPT, TOOLS, marketContext, userMessage } from "./prompts";
 export interface SessionInput {
   agent: Agent;
   feed: FeedItem[];
-  mayPost: boolean;
 }
 
 export interface RunStats {
@@ -32,7 +31,6 @@ const emptyResult = (agentId: string): SessionResult => ({
   follows: [],
   unfollows: [],
   signals: [],
-  post: null,
 });
 
 let client: Anthropic | null = null;
@@ -52,7 +50,6 @@ export function parseToolCalls(agentId: string, blocks: Anthropic.ContentBlock[]
       case "reply": if (id && text) r.replies.push({ postId: id, text }); break;
       case "follow": if (id) r.follows.push(id); break;
       case "unfollow": if (id) r.unfollows.push(id); break;
-      case "post": if (text) r.post = text; break;
       case "intent":
       case "objection":
         if (id) r.signals.push({ postId: id, kind: b.name, reason: typeof input.reason === "string" ? input.reason.trim() : "" });
@@ -73,7 +70,7 @@ async function runReal(store: Store, s: SessionInput, stats: RunStats): Promise<
         { type: "text", text: marketContext(getMarket(store.room.id) ?? OPEN_MARKET), cache_control: { type: "ephemeral" } },
       ],
       tools: TOOLS,
-      messages: [{ role: "user", content: userMessage(store, s.agent, s.feed, s.mayPost) }],
+      messages: [{ role: "user", content: userMessage(store, s.agent, s.feed) }],
     },
     { signal: AbortSignal.timeout(config.sessionTimeoutMs) },
   );
@@ -100,7 +97,6 @@ export function runFake(s: SessionInput, rand = Math.random): SessionResult {
     if (rand() < 0.08 * (1 - p.scepticism)) r.signals.push({ postId: post.id, kind: "intent", reason: "(fake reason)" });
     else if (rand() < 0.05 * p.scepticism) r.signals.push({ postId: post.id, kind: "objection", reason: "(fake objection)" });
   }
-  if (s.mayPost) r.post = `(fake post by @${s.agent.handle})`;
   return r;
 }
 

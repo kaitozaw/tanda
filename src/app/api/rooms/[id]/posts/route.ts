@@ -30,6 +30,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     createdRound: store.room.round,
     roundsSeen: 0,
     seenBy: [],
+    audienceByRound: [],
     counts: emptyCounts(),
     points: 0,
     finalized: false,
