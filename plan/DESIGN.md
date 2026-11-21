@@ -90,4 +90,4 @@ Event   { id, round, agentId, type: "like" | "repost" | "reply" | "follow" | "un
 - `POST /api/rooms/:id/join` → member id (nickname)
 - `POST /api/rooms/:id/posts` → checks length, word filter, 5s cooldown per member
 - `GET /api/rooms/:id` → current state (on page load)
-- `/admin` (`ADMIN_TOKEN`): pause, resume, run a round now, reset room. Agent count is set with `AGENT_COUNT` + reset.
+- `/admin` (`ADMIN_TOKEN`): status, pause, resume, reset room. Agent count is set with `AGENT_COUNT` + reset.
