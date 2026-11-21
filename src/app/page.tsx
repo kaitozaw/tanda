@@ -53,11 +53,12 @@ export default function Home() {
     if (id) router.push(`/rooms/${id}`);
   }
 
-  const field = "w-full rounded-md border border-line bg-transparent px-3 py-2.5 outline-none focus:border-accent";
+  // text-base (16px) keeps iOS Safari from zooming in when a field gets focus.
+  const field = "w-full rounded-md border border-line bg-transparent px-3 py-2.5 text-base outline-none focus:border-accent";
   return (
-    <main className="mx-auto min-h-screen max-w-[600px] border-x border-line pb-16">
-      <header className="border-b border-line px-4 py-8">
-        <h1 className="text-3xl font-extrabold tracking-tight">Capture the Narrative</h1>
+    <main className="mx-auto min-h-dvh max-w-[600px] border-line pb-[calc(4rem+env(safe-area-inset-bottom))] sm:border-x">
+      <header className="border-b border-line px-4 pt-[calc(1.5rem+env(safe-area-inset-top))] pb-6 sm:py-8">
+        <h1 className="text-2xl font-extrabold tracking-tight sm:text-3xl">Capture the Narrative</h1>
         <p className="mt-2 text-muted">
           Test your idea on 1,000 AI stakeholders before you spend a dollar on it. Customers, investors, industry and regulators react in one minute.
         </p>
@@ -79,13 +80,14 @@ export default function Home() {
         </div>
         <div>
           <label className="text-sm font-bold">What is it?</label>
-          <div className="mt-1 grid grid-cols-3 gap-2">
+          <div className="mt-1 grid gap-2 sm:grid-cols-3">
             {KINDS.map(([k, label, hint]) => (
               <button
                 type="button"
                 key={k}
                 onClick={() => setKind(k)}
-                className={`rounded-xl border px-3 py-2 text-left transition ${kind === k ? "border-accent bg-accent/10" : "border-line hover:border-accent"}`}
+                aria-pressed={kind === k}
+                className={`flex items-baseline gap-2 rounded-xl border px-3 py-2.5 text-left transition sm:block sm:py-2 ${kind === k ? "border-accent bg-accent/10" : "border-line hover:border-accent"}`}
               >
                 <div className={`font-bold ${kind === k ? "text-accent" : ""}`}>{label}</div>
                 <div className="text-[12px] text-muted">{hint}</div>
@@ -126,8 +128,8 @@ export default function Home() {
       <form onSubmit={open} className="space-y-2 border-t border-line px-4 py-6">
         <h2 className="text-xl font-extrabold">Join a room</h2>
         <div className="flex gap-2">
-          <input value={link} onChange={(e) => setLink(e.target.value)} placeholder="Paste a room link" className={`flex-1 ${field}`} />
-          <button className="rounded-full border border-line px-4 font-bold transition hover:border-accent">Open</button>
+          <input value={link} onChange={(e) => setLink(e.target.value)} inputMode="url" autoCapitalize="off" autoCorrect="off" placeholder="Paste a room link" className={`min-w-0 flex-1 ${field}`} />
+          <button className="shrink-0 rounded-full border border-line px-5 font-bold transition hover:border-accent">Open</button>
         </div>
       </form>
     </main>

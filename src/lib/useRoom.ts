@@ -14,7 +14,8 @@ interface NotifyItem { type: string; handle: string; role: string; text: string 
 
 
 export function useRoom(roomId: string) {
-  const [memberId, setMemberId] = useState<string | null>(null);
+  // undefined until localStorage has been read, so the first fetch already carries the stored member.
+  const [memberId, setMemberId] = useState<string | null | undefined>(undefined);
   const [view, setView] = useState<RoomView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -27,7 +28,7 @@ export function useRoom(roomId: string) {
     try {
       setMemberId(localStorage.getItem(storageKey));
     } catch {
-      /* storage blocked: user joins again */
+      setMemberId(null); /* storage blocked: user joins again */
     }
   }, [storageKey]);
 
@@ -52,6 +53,9 @@ export function useRoom(roomId: string) {
   // burst of pushes costs at most two GETs and an older response never overwrites a newer one.
   const inFlight = useRef(false);
   const again = useRef(false);
+  // The loop below must use the newest load: if memberId changes mid-fetch, the follow-up fetch has to include it.
+  const loadRef = useRef(load);
+  loadRef.current = load;
   const refresh = useCallback(async () => {
     if (inFlight.current) {
       again.current = true;
@@ -61,14 +65,15 @@ export function useRoom(roomId: string) {
     try {
       do {
         again.current = false;
-        await load();
+        await loadRef.current();
       } while (again.current);
     } finally {
       inFlight.current = false;
     }
-  }, [load]);
+  }, []);
 
   useEffect(() => {
+    if (memberId === undefined) return;
     void refresh();
     const socket = io();
     socketRef.current = socket;
@@ -90,7 +95,7 @@ export function useRoom(roomId: string) {
       socket.disconnect();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [refresh]);
+  }, [refresh, roomId, memberId]);
 
   function pushToast(title: string, body: string | null) {
     const id = ++seq.current;
@@ -121,5 +126,5 @@ export function useRoom(roomId: string) {
     await refresh();
   }
 
-  return { memberId, view, error, toasts, unread, clearUnread: () => setUnread(0), join, post, refresh };
+  return { memberId: memberId ?? null, view, error, toasts, unread, clearUnread: () => setUnread(0), join, post, refresh };
 }

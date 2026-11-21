@@ -33,7 +33,7 @@ export default function Composer({ name, disabled, onPost }: { name: string; dis
           rows={2}
           placeholder={disabled ?? "Pitch the idea in 280 characters"}
           disabled={!!disabled}
-          className="w-full resize-none bg-transparent py-2 text-xl placeholder:text-muted outline-none disabled:opacity-60"
+          className="w-full resize-none bg-transparent py-2 text-lg placeholder:text-muted outline-none sm:text-xl disabled:opacity-60"
         />
         <p className="pb-3 text-[13px] text-muted">Your pitch goes out with the idea card attached. Post several to compare them.</p>
         <div className="flex items-center justify-end gap-3 border-t border-line pt-3">
@@ -41,7 +41,7 @@ export default function Composer({ name, disabled, onPost }: { name: string; dis
           <button
             onClick={submit}
             disabled={busy || !text.trim() || !!disabled}
-            className="rounded-full bg-accent px-5 py-1.5 font-bold text-white transition hover:bg-accent-dim disabled:opacity-50"
+            className="rounded-full bg-accent px-5 py-2 font-bold sm:py-1.5 text-white transition hover:bg-accent-dim disabled:opacity-50"
           >
             {busy ? "Posting…" : "Pitch"}
           </button>

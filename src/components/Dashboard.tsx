@@ -15,7 +15,7 @@ export default function Dashboard({ view }: { view: RoomView }) {
   const [open, setOpen] = useState<string | null>(null);
 
   return (
-    <div className="space-y-4 p-4">
+    <div className="space-y-4 p-3 sm:p-4">
       <div className="grid grid-cols-5 overflow-hidden rounded-2xl border border-line text-center">
         {[
           ["agents", stats.agents],
@@ -24,9 +24,9 @@ export default function Dashboard({ view }: { view: RoomView }) {
           ["reactions", stats.reactions],
           ["signals", stats.signals],
         ].map(([k, v], i) => (
-          <div key={k} className={`py-3 ${i ? "border-l border-line" : ""}`}>
-            <div className="text-xl font-extrabold tabular-nums">{compact(Number(v))}</div>
-            <div className="text-[13px] text-muted">{k}</div>
+          <div key={k} className={`min-w-0 py-2.5 sm:py-3 ${i ? "border-l border-line" : ""}`}>
+            <div className="text-base font-extrabold tabular-nums sm:text-xl">{compact(Number(v))}</div>
+            <div className="truncate text-[11px] text-muted sm:text-[13px]">{k}</div>
           </div>
         ))}
       </div>

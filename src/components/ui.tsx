@@ -44,8 +44,8 @@ export const simLabel = (rounds: number, perRound = 15) => {
 export const compact = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}K` : String(n));
 
 // ---- icons (simple line icons, 18px) ----
-const Svg = ({ d, className = "" }: { d: string; className?: string }) => (
-  <svg viewBox="0 0 24 24" className={`h-[18px] w-[18px] ${className}`} fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+const Svg = ({ d, className = "h-[18px] w-[18px]" }: { d: string; className?: string }) => (
+  <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
     <path d={d} />
   </svg>
 );
@@ -54,6 +54,10 @@ export const IconRepost = () => <Svg d="M7 7h10l-3-3M17 17H7l3 3M17 7v6M7 17v-6"
 export const IconLike = () => <Svg d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z" />;
 export const IconViews = () => <Svg d="M5 20V10M10 20V4M15 20v-7M20 20v-4" />;
 export const IconPersuade = () => <Svg d="M7 17L17 7M9 7h8v8" />;
+// Tab-bar icons (bottom nav on phones), 24px.
+export const IconHome = ({ className = "h-6 w-6" }: { className?: string }) => <Svg className={className} d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z" />;
+export const IconChart = ({ className = "h-6 w-6" }: { className?: string }) => <Svg className={className} d="M5 20V10M10 20V4M15 20v-7M20 20v-4" />;
+export const IconUser = ({ className = "h-6 w-6" }: { className?: string }) => <Svg className={className} d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21a8 8 0 0 1 16 0" />;
 
 /** `me` adds a blue ring: only the viewer's own avatar has it. */
 export function Avatar({ name, me, size = 40 }: { name: string; me?: boolean; size?: number }) {
@@ -192,7 +196,7 @@ export function ScoreStats({ s, kind }: { s: Scorecard; kind: string }) {
     ["Risk flags", String(s.risk.concerns), "regulator concerns"],
   ];
   return (
-    <div className="grid grid-cols-3 gap-px overflow-hidden rounded-xl border border-line bg-line text-center">
+    <div className="grid grid-cols-2 gap-px overflow-hidden rounded-xl sm:grid-cols-3 border border-line bg-line text-center">
       {cells.map(([label, value, sub]) => (
         <div key={label} className="bg-bg px-2 py-2">
           <div className={`text-lg font-extrabold tabular-nums ${label === "Risk flags" && s.risk.concerns ? "text-like" : ""}`}>{value}</div>
@@ -207,14 +211,16 @@ export function ScoreStats({ s, kind }: { s: Scorecard; kind: string }) {
 /** Seen / positive / negative / support shift per stakeholder type. */
 export function StakeholderTable({ s }: { s: Scorecard }) {
   return (
-    <table className="w-full text-left text-[13px]">
+    <div className="overflow-x-auto">
+    <table className="w-full text-left text-[13px] whitespace-nowrap [&_td+td]:pl-2 [&_th+th]:pl-2">
       <thead className="text-muted">
+        {/* Short headers on phones so all five columns fit at 320px. */}
         <tr>
           <th className="font-normal">Stakeholder</th>
-          <th className="text-right font-normal">Saw it</th>
-          <th className="text-right font-normal">Positive</th>
-          <th className="text-right font-normal">Negative</th>
-          <th className="text-right font-normal">Support</th>
+          <th className="text-right font-normal"><span className="sm:hidden">Saw</span><span className="hidden sm:inline">Saw it</span></th>
+          <th className="text-right font-normal"><span className="sm:hidden">Pos</span><span className="hidden sm:inline">Positive</span></th>
+          <th className="text-right font-normal"><span className="sm:hidden">Neg</span><span className="hidden sm:inline">Negative</span></th>
+          <th className="text-right font-normal"><span className="sm:hidden">Shift</span><span className="hidden sm:inline">Support</span></th>
         </tr>
       </thead>
       <tbody>
@@ -231,6 +237,7 @@ export function StakeholderTable({ s }: { s: Scorecard }) {
         ))}
       </tbody>
     </table>
+    </div>
   );
 }
 
