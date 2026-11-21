@@ -11,8 +11,8 @@ const feedOf = (...posts: ReturnType<typeof makePost>[]): FeedItem[] => posts.ma
 
 describe("pointsFor", () => {
   it("engagement by tier, intent by segment, objections 0 (PRODUCT.md → Scoring)", () => {
-    const crowd = { tier: "crowd", type: "customer" } as const;
-    const power = (type: "investor" | "industry_lead" | "regulator" | "media") => ({ tier: "power", type }) as const;
+    const crowd = { tier: "crowd", segment: "customer" } as const;
+    const power = (type: "investor" | "industry_lead" | "regulator" | "media") => ({ tier: "power", segment: type }) as const;
     expect([pointsFor("like", crowd), pointsFor("repost", crowd), pointsFor("reply", crowd), pointsFor("follow", crowd), pointsFor("unfollow", crowd)]).toEqual([2, 5, 5, 10, -10]);
     expect([pointsFor("like", power("media")), pointsFor("repost", power("media")), pointsFor("follow", power("media"))]).toEqual([2, 15, 20]);
     expect([pointsFor("intent", crowd), pointsFor("intent", power("investor")), pointsFor("intent", power("industry_lead")), pointsFor("intent", power("regulator")), pointsFor("intent", power("media"))]).toEqual([30, 100, 80, 60, 60]);

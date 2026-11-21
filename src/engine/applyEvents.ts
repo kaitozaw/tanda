@@ -14,8 +14,8 @@ export interface Notification {
 }
 
 /** Engagement points by the agent's tier; intent points by its segment; objections score 0 (plan/PRODUCT.md → Scoring). */
-export const pointsFor = (type: EventType, p: Pick<Persona, "tier" | "type">) =>
-  type === "objection" ? 0 : type === "intent" ? rules.signals[p.type].intent.points : rules.points[type][p.tier];
+export const pointsFor = (type: EventType, p: Pick<Persona, "tier" | "segment">) =>
+  type === "objection" ? 0 : type === "intent" ? rules.signals[p.segment].intent.points : rules.points[type][p.tier];
 
 const clipWords = (text: string, n: number) => text.split(/\s+/).filter(Boolean).slice(0, n).join(" ");
 
@@ -38,7 +38,7 @@ export function applyResults(
     const agent = store.agents.get(r.agentId);
     const feed = feeds.get(r.agentId);
     if (!agent || !feed) continue;
-    const { role, type: segment } = agent.persona;
+    const { role, segment } = agent.persona;
     const inFeed = new Map(feed.map((it) => [it.post.id, it]));
     const isPitch = (postId: string) => inFeed.get(postId)?.post.authorType === "member";
     // A person likes, reposts, replies or signals once per post, even if it shows up again next round.

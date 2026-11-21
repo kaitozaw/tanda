@@ -1,15 +1,15 @@
 import { Store, emptyCounts } from "@/engine/store";
-import type { Agent, AgentType, Persona, Post } from "@/engine/types";
+import type { Agent, Segment, Persona, Post } from "@/engine/types";
 
-export function makeAgent(id: string, type: AgentType = "customer", extra: Partial<Agent> = {}, persona: Partial<Persona> = {}): Agent {
+export function makeAgent(id: string, segment: Segment = "customer", extra: Partial<Agent> = {}, persona: Partial<Persona> = {}): Agent {
   return {
     id,
     handle: id,
     followingIds: [],
     followerIds: [],
     persona: {
-      market: "au", name: id, age: 30, region: "Sydney, NSW", tier: type === "customer" ? "crowd" : "power", type,
-      role: "cafe owner", group: type === "customer" ? "Small business owners" : "Seed angels", priorities: ["cash flow"],
+      market: "au", name: id, age: 30, region: "Sydney, NSW", tier: segment === "customer" ? "crowd" : "power", segment,
+      role: "cafe owner", group: segment === "customer" ? "Small business owners" : "Seed angels", priorities: ["cash flow"],
       adoption: 0.5, priceSensitivity: 0.5, scepticism: 0.5, activity: 0.5, openness: 0.5, bio: "",
       ...persona,
     },

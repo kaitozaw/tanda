@@ -78,8 +78,8 @@ Room    { id /* market id */, round, paused, running, lastRoundMs, requestDay, r
 Member  { id, nickname, handle, followerIds: AgentId[], joinedAt }
 Agent   { id, handle, persona: Persona, followingIds: (AgentId | MemberId)[], followerIds: AgentId[] }
 Persona { market /* market id */, name, age, region, tier: "power" | "crowd",
-          type: "customer" | "investor" | "industry_lead" | "regulator" | "media",
-          /* type = the segment */ role, group /* persona label only */, priorities: string[], adoption, priceSensitivity, scepticism,
+          segment: "customer" | "investor" | "industry_lead" | "regulator" | "media",
+          role, group /* persona label only */, priorities: string[], adoption, priceSensitivity, scepticism,
           activity, openness /* 0-1 each */, bio }
 Post    { id, authorType: "agent" | "member", authorId, text, createdRound, roundsSeen,
           seenBy: AgentId[] /* pitches only, unique */, counts: Counts, points, finalized,
@@ -91,7 +91,7 @@ Event   { id, round, agentId, type: keyof Counts (except impressions), postId,
 - Removed from main: `Room.topic`, `Agent.stance`, `Persona.leaning` / `interests`, `Post.side`, `neutralShift`, `Event.stanceBefore` / `stanceAfter`. A member post is a pitch; there is no `isPitch` flag.
 - `seenBy` is kept for pitches only. Feedback needs to know *which* agents saw a pitch (e.g. "how many investors saw it" next to how many signalled `intent`), and storing that for every agent post would be wasteful.
 - `data/rooms/<roomId>/agents.json` (1,000 personas for that market) is generated once before the demo and loaded at startup. It moves from `data/agents.json` so each market has its own.
-- `data/rooms/<roomId>/posts.json` holds the room's starter posts (`{ type, text }`; ~20 for `au`: everyday life and work in Australia, no pitches). They are added on a fresh seed and on reset, so the timeline is not empty before anyone pitches. Each is posted by a different agent of that type. A room without the file starts empty.
+- `data/rooms/<roomId>/posts.json` holds the room's starter posts (`{ segment, text }`; ~20 for `au`: everyday life and work in Australia, no pitches). They are added on a fresh seed and on reset, so the timeline is not empty before anyone pitches. Each is posted by a different agent of that segment. A room without the file starts empty.
 - `events` is the engagement log. Points, notifications and feedback are all computed from it.
 
 ## Audience generation (`scripts/generate-agents.ts`)
@@ -134,7 +134,7 @@ Tools: main's `like`, `repost`, `reply`, `follow`, `unfollow` and `post`, plus `
 |---|---|
 | **Home** | One card per market. The open one links to its room; `coming_soon` ones are greyed out and not clickable. No room creation. |
 | **Timeline** | Market header (name + one-line summary), the live feed and the pitch composer. Pitches carry a "Pitch" badge. |
-| **Dashboard** | Counts (agents, people, pitches, reactions), the audience by type, and the leaderboard of pitches. Tap a row for the full text, the scorecard and the breakdown (count and points per type). |
+| **Dashboard** | Counts (agents, people, pitches, reactions), the audience by segment, and the leaderboard of pitches. Tap a row for the full text, the scorecard and the breakdown (count and points per type). |
 | **My Pitches** | Each of my pitches with its score, scorecard, activity log (who did what, with signal reasons; signals are visible only to the author), and feedback once final. Tab badge for unread reactions. |
 
 Every scorecard and report shows the label "Simulated audience. Use it to decide what to test for real."

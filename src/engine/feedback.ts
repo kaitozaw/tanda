@@ -43,7 +43,7 @@ async function llmFeedback(store: Store, post: Post, s: Scorecard): Promise<Text
     .slice(0, 30)
     .map((e) => {
       const a = store.agents.get(e.agentId);
-      return `- [${e.type}] ${a?.persona.role} (${a?.persona.type}): ${e.text}`;
+      return `- [${e.type}] ${a?.persona.role} (${a?.persona.segment}): ${e.text}`;
     })
     .join("\n");
   const market = getMarket(store.room.id) ?? OPEN_MARKET;

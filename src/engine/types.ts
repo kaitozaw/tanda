@@ -1,9 +1,9 @@
 export type AuthorType = "agent" | "member";
 export type Tier = "power" | "crowd";
-export type AgentType = "customer" | "investor" | "industry_lead" | "regulator" | "media";
-export const POWER_TYPES = ["investor", "industry_lead", "regulator", "media"] as const satisfies readonly AgentType[];
-export type PowerType = (typeof POWER_TYPES)[number];
-export const AGENT_TYPES: AgentType[] = ["customer", ...POWER_TYPES];
+export type Segment = "customer" | "investor" | "industry_lead" | "regulator" | "media";
+export const POWER_SEGMENTS = ["investor", "industry_lead", "regulator", "media"] as const satisfies readonly Segment[];
+export type PowerSegment = (typeof POWER_SEGMENTS)[number];
+export const SEGMENTS: Segment[] = ["customer", ...POWER_SEGMENTS];
 
 export type EngagementType = "like" | "repost" | "reply" | "follow" | "unfollow";
 /** Private signals on a pitch. What they mean and weigh depends on the agent's segment (rules.signals). */
@@ -17,8 +17,8 @@ export interface Persona {
   age: number;
   region: string;
   tier: Tier;
-  /** The segment: customer, investor, industry_lead, regulator or media. */
-  type: AgentType;
+  /** customer, investor, industry_lead, regulator or media. */
+  segment: Segment;
   /** "Ops manager at an 80-person freight firm", "Seed-stage generalist angel" */
   role: string;
   /** Finer persona label ("Tradies", "Seed angels"). Shapes the persona only; not shown in feedback. */
@@ -53,7 +53,7 @@ export type Counts = Record<EventType, number> & { impressions: number };
 
 /** One segment's response to a pitch (unique agents). */
 export interface SegmentRow {
-  segment: AgentType;
+  segment: Segment;
   seen: number;
   /** Used like, repost, reply or follow. */
   reacted: number;
@@ -67,7 +67,7 @@ export interface Scorecard {
   reach: number;
   /** (like + repost + reply + follow + unfollow) / views, same as the dashboard's reactions. */
   reactionRate: number;
-  /** One row per segment, in AGENT_TYPES order. */
+  /** One row per segment, in SEGMENTS order. */
   segments: SegmentRow[];
 }
 

@@ -1,4 +1,4 @@
-import { AGENT_TYPES, type Post, type SimEvent } from "./types";
+import { SEGMENTS, type Post, type SimEvent } from "./types";
 import { sim, type Store } from "./store";
 import { config, rules } from "./config";
 import { getMarket, OPEN_MARKET } from "./markets";
@@ -46,7 +46,7 @@ export function eventView(store: Store, e: SimEvent) {
     handle: a?.handle ?? "unknown",
     name: a?.persona.name ?? "",
     role: a?.persona.role ?? "",
-    segment: a?.persona.type ?? "customer",
+    segment: a?.persona.segment ?? "customer",
     text: e.text,
   };
 }
@@ -54,10 +54,10 @@ export type EventView = ReturnType<typeof eventView>;
 
 const memberPosts = (store: Store) => store.pitches();
 
-/** Agents the engine uses, per type (the Dashboard's audience panel). */
+/** Agents the engine uses, per segment (the Dashboard's audience panel). */
 function audience(store: Store) {
   const agents = store.activeAgents();
-  return AGENT_TYPES.map((type) => ({ type, count: agents.filter((a) => a.persona.type === type).length }));
+  return SEGMENTS.map((segment) => ({ segment, count: agents.filter((a) => a.persona.segment === segment).length }));
 }
 
 export function roomView(store: Store, memberId: string | null) {

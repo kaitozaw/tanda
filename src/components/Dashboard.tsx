@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import type { RoomView } from "@/engine/views";
-import { Avatar, Progress, SIM_LABEL, ScorecardGrid, TYPE_LABEL, compact } from "./ui";
+import { Avatar, Progress, SIM_LABEL, ScorecardGrid, SEGMENT_LABEL, compact } from "./ui";
 
 export const EVENT_LABEL: Record<string, string> = {
   like: "Likes",
@@ -38,8 +38,8 @@ export default function Dashboard({ view }: { view: RoomView }) {
         <h2 className="text-[15px] font-bold">Audience · {room.market.name}</h2>
         <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm">
           {audience.map((a) => (
-            <span key={a.type}>
-              <span className="font-bold tabular-nums">{a.count}</span> <span className="text-muted">{TYPE_LABEL[a.type]}</span>
+            <span key={a.segment}>
+              <span className="font-bold tabular-nums">{a.count}</span> <span className="text-muted">{SEGMENT_LABEL[a.segment]}</span>
             </span>
           ))}
         </div>

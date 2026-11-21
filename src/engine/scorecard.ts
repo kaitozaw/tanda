@@ -1,4 +1,4 @@
-import { AGENT_TYPES, type EventType, type Post, type Scorecard } from "./types";
+import { SEGMENTS, type EventType, type Post, type Scorecard } from "./types";
 import type { Store } from "./store";
 
 const ENGAGEMENT: EventType[] = ["like", "repost", "reply", "follow"];
@@ -6,7 +6,7 @@ const ENGAGEMENT: EventType[] = ["like", "repost", "reply", "follow"];
 /** The feedback numbers for one pitch (plan/PRODUCT.md → Feedback), from its events and seenBy. Pure. */
 export function computeScorecard(store: Store, post: Post): Scorecard {
   const events = store.eventsByPost.get(post.id) ?? [];
-  const segmentOf = (id: string) => store.agents.get(id)?.persona.type;
+  const segmentOf = (id: string) => store.agents.get(id)?.persona.segment;
 
   /** Unique agents of a segment with an event of one of these types. */
   const who = (types: EventType[], segment: string) =>
@@ -18,7 +18,7 @@ export function computeScorecard(store: Store, post: Post): Scorecard {
     views: c.impressions,
     reach: post.seenBy.length,
     reactionRate: c.impressions ? reactions / c.impressions : 0,
-    segments: AGENT_TYPES.map((segment) => ({
+    segments: SEGMENTS.map((segment) => ({
       segment,
       seen: post.seenBy.filter((id) => segmentOf(id) === segment).length,
       reacted: who(ENGAGEMENT, segment),

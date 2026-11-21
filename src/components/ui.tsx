@@ -5,7 +5,7 @@ export function PitchBadge() {
   return <span className="rounded-full border border-accent/40 px-2 py-px text-xs text-accent">Pitch</span>;
 }
 
-export const TYPE_LABEL: Record<string, string> = {
+export const SEGMENT_LABEL: Record<string, string> = {
   customer: "Customers",
   investor: "Investors",
   industry_lead: "Industry",
@@ -56,7 +56,7 @@ export function ScorecardGrid({ s }: { s: Scorecard }) {
         <tbody>
           {s.segments.map((g) => (
             <tr key={g.segment} className={`border-t border-line ${g.seen ? "" : "text-muted"}`}>
-              <td className="py-1 pl-3">{TYPE_LABEL[g.segment]}</td>
+              <td className="py-1 pl-3">{SEGMENT_LABEL[g.segment]}</td>
               <td className="tabular-nums">{g.seen}</td>
               <td className="tabular-nums">{g.reacted}</td>
               <td className="tabular-nums">
